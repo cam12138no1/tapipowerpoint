@@ -235,7 +235,7 @@ export default function Home() {
                 <CardDescription className="ml-11">选择一个已创建的设计规范，或从模板库创建新规范</CardDescription>
               </CardHeader>
               <CardContent className="ml-11">
-                <div className="flex gap-3">
+                <div className="flex gap-3" data-tour="design-spec">
                   <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
                     <SelectTrigger className="flex-1 h-12 input-pro text-base">
                       <SelectValue placeholder={projectsLoading ? "加载中..." : "选择设计规范"} />
@@ -271,7 +271,7 @@ export default function Home() {
                   PPT 标题
                 </CardTitle>
               </CardHeader>
-              <CardContent className="ml-11">
+              <CardContent className="ml-11" data-tour="title-input">
                 <Input
                   placeholder="例如：2024年度市场分析报告"
                   value={title}
@@ -282,7 +282,7 @@ export default function Home() {
             </Card>
 
             {/* Source Content - File or Proposal */}
-            <Card className="pro-card border-0 shadow-pro overflow-hidden">
+            <Card className="pro-card border-0 shadow-pro overflow-hidden" data-tour="content-source">
               <div className="h-1 gradient-gold" />
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-3">
@@ -374,7 +374,7 @@ export default function Home() {
             </Card>
 
             {/* Image Attachments - Enhanced with better guidance */}
-            <Card className="pro-card border-0 shadow-pro overflow-hidden">
+            <Card className="pro-card border-0 shadow-pro overflow-hidden" data-tour="image-upload">
               <div className="h-1 gradient-gold" />
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-3">
@@ -463,7 +463,7 @@ export default function Home() {
             </Card>
 
             {/* Submit Button */}
-            <div className="flex justify-end pt-4 pb-8">
+            <div className="flex justify-end pt-4 pb-8" data-tour="generate-button">
               <Button
                 size="lg"
                 onClick={handleSubmit}

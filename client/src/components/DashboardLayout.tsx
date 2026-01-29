@@ -19,7 +19,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { FolderKanban, Layout, ListTodo, LogOut, PanelLeft, Plus, Sparkles, User } from "lucide-react";
+import { FolderKanban, HelpCircle, Layout, ListTodo, LogOut, PanelLeft, Plus, Sparkles, User } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -27,12 +27,16 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
+import OnboardingTour from "./OnboardingTour";
+
 const menuItems = [
   { icon: Plus, label: "创建PPT", path: "/" },
   { icon: ListTodo, label: "任务列表", path: "/tasks" },
   { icon: FolderKanban, label: "设计规范", path: "/projects" },
   { icon: Layout, label: "专业模板", path: "/templates" },
 ];
+
+const ONBOARDING_COMPLETED_KEY = 'pptmaster_onboarding_completed';
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -246,6 +250,34 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+  
+  // 新手引导状态
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // 检查是否首次访问，自动显示新手引导
+  useEffect(() => {
+    const completed = localStorage.getItem(ONBOARDING_COMPLETED_KEY);
+    if (!completed && location === '/') {
+      // 首次访问且在首页，延迟显示新手引导
+      const timer = setTimeout(() => setShowOnboarding(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [location]);
+  
+  const handleOnboardingComplete = () => {
+    localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+    setShowOnboarding(false);
+  };
+  
+  const handleStartOnboarding = () => {
+    // 如果不在首页，先跳转到首页
+    if (location !== '/') {
+      setLocation('/');
+      setTimeout(() => setShowOnboarding(true), 500);
+    } else {
+      setShowOnboarding(true);
+    }
+  };
 
   useEffect(() => {
     if (isCollapsed) {
@@ -341,6 +373,20 @@ function DashboardLayoutContent({
                 );
               })}
             </SidebarMenu>
+            
+            {/* 新手引导按钮 */}
+            <SidebarMenu className="px-2 py-1 mt-auto">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={handleStartOnboarding}
+                  tooltip="新手引导"
+                  className="h-10 transition-all font-normal rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <HelpCircle className="h-4 w-4 opacity-70" />
+                  <span>新手引导</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-border">
@@ -407,6 +453,13 @@ function DashboardLayoutContent({
         )}
         <main className="flex-1 p-6">{children}</main>
       </SidebarInset>
+      
+      {/* 新手引导组件 */}
+      <OnboardingTour
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onComplete={handleOnboardingComplete}
+      />
     </>
   );
 }

@@ -6,7 +6,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
-import { pptEngine, getMimeType, buildPPTPrompt } from "./ppt-engine";
+import { pptEngine, getMimeType, buildPPTPrompt, DesignSpec } from "./ppt-engine";
 import { storagePut, storageGet } from "./storage";
 import { nanoid } from "nanoid";
 
@@ -194,8 +194,19 @@ const taskRouter = router({
 
       await db.addTimelineEvent(input.taskId, "开始生成PPT", "running");
 
-      // Build prompt
-      const prompt = buildPPTPrompt(input.sourceFileId || null, input.imageFileIds || [], input.proposalContent);
+      // Build design spec for prompt
+      const designSpec: DesignSpec | null = project ? {
+        name: project.name,
+        primaryColor: project.primaryColor || '#0033A0',
+        secondaryColor: project.secondaryColor || '#58595B',
+        accentColor: project.accentColor || '#C8A951',
+        fontFamily: project.fontFamily || '微软雅黑',
+        designSpec: project.designSpec || undefined,
+        logoUrl: project.logoUrl || undefined,
+      } : null;
+
+      // Build prompt with design spec
+      const prompt = buildPPTPrompt(input.sourceFileId || null, input.imageFileIds || [], input.proposalContent, designSpec);
 
       // Prepare attachments
       const attachments: Array<{ fileId: string }> = [];
@@ -448,8 +459,19 @@ const taskRouter = router({
       // Parse existing attachments (preserved from original task)
       const imageAttachments = JSON.parse(task.imageAttachments || "[]");
 
-      // Build prompt using preserved configuration
-      const prompt = buildPPTPrompt(task.sourceFileId || null, imageAttachments);
+      // Build design spec for prompt
+      const designSpec: DesignSpec | null = project ? {
+        name: project.name,
+        primaryColor: project.primaryColor || '#0033A0',
+        secondaryColor: project.secondaryColor || '#58595B',
+        accentColor: project.accentColor || '#C8A951',
+        fontFamily: project.fontFamily || '微软雅黑',
+        designSpec: project.designSpec || undefined,
+        logoUrl: project.logoUrl || undefined,
+      } : null;
+
+      // Build prompt using preserved configuration with design spec
+      const prompt = buildPPTPrompt(task.sourceFileId || null, imageAttachments, task.proposalContent || undefined, designSpec);
 
       // Prepare attachments using preserved file IDs
       const attachments: Array<{ fileId: string }> = [];

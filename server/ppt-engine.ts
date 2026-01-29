@@ -243,11 +243,23 @@ export function getMimeType(filename: string): string {
   return mimeTypes[ext || ''] || 'application/octet-stream';
 }
 
+// Design specification interface
+export interface DesignSpec {
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  fontFamily: string;
+  designSpec?: string; // Additional design instructions
+  logoUrl?: string;
+}
+
 // Build PPT generation prompt - optimized for autonomous execution
 export function buildPPTPrompt(
   sourceFileId: string | null,
   images: Array<{ fileId: string; placement: string }>,
-  proposalContent?: string
+  proposalContent?: string,
+  designSpec?: DesignSpec | null
 ): string {
   const lines = [
     '请根据我提供的资料和要求，制作一份专业的行业PPT。',
@@ -257,15 +269,39 @@ export function buildPPTPrompt(
     '- **高效执行**：遇到需要选择的情况时，请根据专业判断直接做出最优决策。',
     '- **仅在必要时询问**：只有在遇到无法自行判断的关键问题时才向用户提问。',
     '',
-    '**任务要求**：',
-    '',
-    '1. **严格遵循项目指令**：你必须严格遵守本项目关联的PPT设计规范。',
-    '',
   ];
+
+  // 添加设计规范要求
+  if (designSpec) {
+    lines.push('**设计规范要求**（必须严格遵守）：');
+    lines.push('');
+    lines.push(`- **规范名称**：${designSpec.name}`);
+    lines.push(`- **主色调**：${designSpec.primaryColor}（用于标题、重要元素、强调内容）`);
+    lines.push(`- **辅助色**：${designSpec.secondaryColor}（用于正文、次要元素）`);
+    lines.push(`- **强调色**：${designSpec.accentColor}（用于图表、按钮、高亮内容）`);
+    lines.push(`- **字体**：${designSpec.fontFamily}（所有文字必须使用此字体）`);
+    if (designSpec.logoUrl) {
+      lines.push(`- **Logo**：请在封面和结尾页使用品牌Logo`);
+    }
+    if (designSpec.designSpec) {
+      lines.push('');
+      lines.push('**额外设计说明**：');
+      lines.push(designSpec.designSpec);
+    }
+    lines.push('');
+    lines.push('**重要**：以上配色和字体规范必须严格执行，确保整个PPT风格统一、专业。');
+    lines.push('');
+  } else {
+    lines.push('**设计风格**：用户未指定设计规范，请根据内容主题自由发挥，选择最适合的专业商务风格。');
+    lines.push('');
+  }
+
+  lines.push('**任务要求**：');
+  lines.push('');
 
   // 根据输入模式添加不同的内容生成指令
   if (proposalContent) {
-    lines.push('2. **内容生成**：');
+    lines.push('1. **内容生成**：');
     lines.push('   - 基于我提供的Proposal内容，提炼核心要点');
     lines.push('   - 将内容组织成逻辑清晰的PPT页面结构');
     lines.push('   - 如果内容不够详细，请自动搜索相关资料进行补充');
@@ -276,17 +312,17 @@ export function buildPPTPrompt(
     lines.push(proposalContent);
     lines.push('```');
   } else if (sourceFileId) {
-    lines.push('2. **内容生成**：');
+    lines.push('1. **内容生成**：');
     lines.push('   - 基于我提供的源文档，提炼核心内容');
     lines.push('   - 将内容组织成逻辑清晰的PPT页面结构');
     lines.push('   - 如有需要，可自动搜索补充相关数据和信息');
   } else {
-    lines.push('2. **内容生成**：请根据项目设计规范和配图信息，生成一份专业的PPT。');
+    lines.push('1. **内容生成**：请根据设计规范和配图信息，生成一份专业的PPT。');
   }
 
   if (images.length > 0) {
     lines.push('');
-    lines.push('3. **智能配图**（自动执行，无需确认）：');
+    lines.push('2. **智能配图**（自动执行，无需确认）：');
     lines.push('   a. **优先使用指定图片**：我为部分页面指定了配图，请按要求使用：');
     images.forEach(({ fileId, placement }) => {
       lines.push(`      - ${placement}：使用附件 \`${fileId}\``);
@@ -296,23 +332,23 @@ export function buildPPTPrompt(
     lines.push('   d. **自主选择**：请根据专业判断直接选择最合适的图片，无需向用户确认。');
   } else {
     lines.push('');
-    lines.push('3. **智能配图**（自动执行，无需确认）：');
+    lines.push('2. **智能配图**（自动执行，无需确认）：');
     lines.push('   a. 请首先在源文档中寻找相关图表或图片。');
     lines.push('   b. 如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片。');
     lines.push('   c. 请根据专业判断直接选择最合适的图片，无需向用户确认。');
   }
 
   lines.push('');
-  lines.push('4. **数据与信息补充**：');
+  lines.push('3. **数据与信息补充**：');
   lines.push('   - 如果Proposal或文档中的数据不够完整，请自动搜索最新的行业数据进行补充');
   lines.push('   - 可以添加相关的市场趋势、统计数据、案例分析等内容');
   lines.push('   - 确保PPT内容专业、充实、有说服力');
 
   lines.push('');
-  lines.push('5. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
+  lines.push('4. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
   
   lines.push('');
-  lines.push('6. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。');
+  lines.push('5. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。');
 
   lines.push('');
   lines.push('**再次强调**：请尽可能自主完成所有工作，只有在遇到真正无法判断的关键问题时才向用户提问。');
