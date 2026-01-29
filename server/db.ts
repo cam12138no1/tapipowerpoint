@@ -2,18 +2,33 @@ import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, projects, pptTasks, InsertProject, InsertPptTask, Project, PptTask } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import * as memStore from './memory-store';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _dbInitialized = false;
+
+// Check if we should use memory store
+function useMemoryStore(): boolean {
+  return !process.env.DATABASE_URL;
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (_dbInitialized) return _db;
+  
+  _dbInitialized = true;
+  
+  if (process.env.DATABASE_URL) {
     try {
       _db = drizzle(process.env.DATABASE_URL);
+      console.log("[Database] Connected to MySQL database");
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
     }
+  } else {
+    console.log("[Database] No DATABASE_URL configured, using in-memory storage");
+    _db = null;
   }
   return _db;
 }
@@ -25,9 +40,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     throw new Error("User openId is required for upsert");
   }
 
+  if (useMemoryStore()) {
+    memStore.memoryUpsertUser(user);
+    return;
+  }
+
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    memStore.memoryUpsertUser(user);
     return;
   }
 
@@ -75,140 +95,315 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
-    throw error;
+    // Fallback to memory store
+    memStore.memoryUpsertUser(user);
   }
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
+  if (useMemoryStore()) {
+    return memStore.memoryGetUserByOpenId(openId);
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryGetUserByOpenId(openId);
+  }
 
-  return result.length > 0 ? result[0] : undefined;
+  try {
+    const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  } catch (error) {
+    console.error("[Database] Failed to get user:", error);
+    return memStore.memoryGetUserByOpenId(openId);
+  }
+}
+
+// Get or create user (for simple auth)
+export async function getOrCreateUser(openId: string, name?: string) {
+  if (useMemoryStore()) {
+    return memStore.memoryGetOrCreateUser(openId, name);
+  }
+
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryGetOrCreateUser(openId, name);
+  }
+
+  try {
+    let [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    if (!user) {
+      await db.insert(users).values({
+        openId,
+        name: name || openId,
+        loginMethod: 'simple',
+        lastSignedIn: new Date(),
+      });
+      [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    }
+    return user;
+  } catch (error) {
+    console.error("[Database] Failed to get/create user:", error);
+    return memStore.memoryGetOrCreateUser(openId, name);
+  }
 }
 
 // ============ Project Operations ============
 
 export async function createProject(data: InsertProject): Promise<Project> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (useMemoryStore()) {
+    return memStore.memoryCreateProject(data);
+  }
 
-  const result = await db.insert(projects).values(data);
-  const insertId = result[0].insertId;
-  
-  const [project] = await db.select().from(projects).where(eq(projects.id, insertId));
-  return project;
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryCreateProject(data);
+  }
+
+  try {
+    const result = await db.insert(projects).values(data);
+    const insertId = result[0].insertId;
+    
+    const [project] = await db.select().from(projects).where(eq(projects.id, insertId));
+    return project;
+  } catch (error) {
+    console.error("[Database] Failed to create project:", error);
+    return memStore.memoryCreateProject(data);
+  }
 }
 
 export async function getProjectById(id: number): Promise<Project | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
+  if (useMemoryStore()) {
+    return memStore.memoryGetProjectById(id);
+  }
 
-  const [project] = await db.select().from(projects).where(eq(projects.id, id));
-  return project;
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryGetProjectById(id);
+  }
+
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    return project;
+  } catch (error) {
+    console.error("[Database] Failed to get project:", error);
+    return memStore.memoryGetProjectById(id);
+  }
 }
 
 export async function getProjectsByUserId(userId: number): Promise<Project[]> {
-  const db = await getDb();
-  if (!db) return [];
+  if (useMemoryStore()) {
+    return memStore.memoryGetProjectsByUserId(userId);
+  }
 
-  return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.createdAt));
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryGetProjectsByUserId(userId);
+  }
+
+  try {
+    return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get projects:", error);
+    return memStore.memoryGetProjectsByUserId(userId);
+  }
 }
 
 export async function updateProject(id: number, data: Partial<InsertProject>): Promise<Project | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
+  if (useMemoryStore()) {
+    return memStore.memoryUpdateProject(id, data);
+  }
 
-  await db.update(projects).set(data).where(eq(projects.id, id));
-  const [project] = await db.select().from(projects).where(eq(projects.id, id));
-  return project;
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryUpdateProject(id, data);
+  }
+
+  try {
+    await db.update(projects).set(data).where(eq(projects.id, id));
+    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    return project;
+  } catch (error) {
+    console.error("[Database] Failed to update project:", error);
+    return memStore.memoryUpdateProject(id, data);
+  }
 }
 
 export async function deleteProject(id: number): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  if (useMemoryStore()) {
+    memStore.memoryDeleteProject(id);
+    return;
+  }
 
-  await db.delete(projects).where(eq(projects.id, id));
+  const db = await getDb();
+  if (!db) {
+    memStore.memoryDeleteProject(id);
+    return;
+  }
+
+  try {
+    await db.delete(projects).where(eq(projects.id, id));
+  } catch (error) {
+    console.error("[Database] Failed to delete project:", error);
+    memStore.memoryDeleteProject(id);
+  }
 }
 
 // ============ PPT Task Operations ============
 
 export async function createPptTask(data: InsertPptTask): Promise<PptTask> {
+  if (useMemoryStore()) {
+    return memStore.memoryCreatePptTask(data);
+  }
+
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    return memStore.memoryCreatePptTask(data);
+  }
 
-  // Set default values for JSON fields
-  const taskData = {
-    ...data,
-    imageAttachments: data.imageAttachments || '[]',
-    timelineEvents: data.timelineEvents || JSON.stringify([
-      { time: new Date().toISOString(), event: '任务已创建', status: 'completed' },
-    ]),
-  };
+  try {
+    // Set default values for JSON fields
+    const taskData = {
+      ...data,
+      imageAttachments: data.imageAttachments || '[]',
+      timelineEvents: data.timelineEvents || JSON.stringify([
+        { time: new Date().toISOString(), event: '任务已创建', status: 'completed' },
+      ]),
+    };
 
-  const result = await db.insert(pptTasks).values(taskData);
-  const insertId = result[0].insertId;
-  
-  const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, insertId));
-  return task;
+    const result = await db.insert(pptTasks).values(taskData);
+    const insertId = result[0].insertId;
+    
+    const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, insertId));
+    return task;
+  } catch (error) {
+    console.error("[Database] Failed to create task:", error);
+    return memStore.memoryCreatePptTask(data);
+  }
 }
 
 export async function getPptTaskById(id: number): Promise<PptTask | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
+  if (useMemoryStore()) {
+    return memStore.memoryGetPptTaskById(id);
+  }
 
-  const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, id));
-  return task;
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryGetPptTaskById(id);
+  }
+
+  try {
+    const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, id));
+    return task;
+  } catch (error) {
+    console.error("[Database] Failed to get task:", error);
+    return memStore.memoryGetPptTaskById(id);
+  }
 }
 
 export async function getPptTasksByUserId(userId: number): Promise<PptTask[]> {
-  const db = await getDb();
-  if (!db) return [];
+  if (useMemoryStore()) {
+    return memStore.memoryGetPptTasksByUserId(userId);
+  }
 
-  return db.select().from(pptTasks).where(eq(pptTasks.userId, userId)).orderBy(desc(pptTasks.createdAt));
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryGetPptTasksByUserId(userId);
+  }
+
+  try {
+    return db.select().from(pptTasks).where(eq(pptTasks.userId, userId)).orderBy(desc(pptTasks.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get tasks:", error);
+    return memStore.memoryGetPptTasksByUserId(userId);
+  }
 }
 
 export async function getPptTaskWithProject(taskId: number) {
+  if (useMemoryStore()) {
+    return memStore.memoryGetPptTaskWithProject(taskId);
+  }
+
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) {
+    return memStore.memoryGetPptTaskWithProject(taskId);
+  }
 
-  const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, taskId));
-  if (!task) return undefined;
+  try {
+    const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, taskId));
+    if (!task) return undefined;
 
-  const [project] = await db.select().from(projects).where(eq(projects.id, task.projectId));
-  
-  return { ...task, project };
+    const [project] = await db.select().from(projects).where(eq(projects.id, task.projectId));
+    
+    return { ...task, project };
+  } catch (error) {
+    console.error("[Database] Failed to get task with project:", error);
+    return memStore.memoryGetPptTaskWithProject(taskId);
+  }
 }
 
 export async function updatePptTask(id: number, data: Partial<InsertPptTask>): Promise<PptTask | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
+  if (useMemoryStore()) {
+    return memStore.memoryUpdatePptTask(id, data);
+  }
 
-  await db.update(pptTasks).set(data).where(eq(pptTasks.id, id));
-  const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, id));
-  return task;
+  const db = await getDb();
+  if (!db) {
+    return memStore.memoryUpdatePptTask(id, data);
+  }
+
+  try {
+    await db.update(pptTasks).set(data).where(eq(pptTasks.id, id));
+    const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, id));
+    return task;
+  } catch (error) {
+    console.error("[Database] Failed to update task:", error);
+    return memStore.memoryUpdatePptTask(id, data);
+  }
 }
 
 export async function addTimelineEvent(taskId: number, event: string, status: string): Promise<void> {
+  if (useMemoryStore()) {
+    memStore.memoryAddTimelineEvent(taskId, event, status);
+    return;
+  }
+
   const db = await getDb();
-  if (!db) return;
+  if (!db) {
+    memStore.memoryAddTimelineEvent(taskId, event, status);
+    return;
+  }
 
-  const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, taskId));
-  if (!task) return;
+  try {
+    const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, taskId));
+    if (!task) return;
 
-  const events = JSON.parse(task.timelineEvents || '[]');
-  events.push({ time: new Date().toISOString(), event, status });
-  
-  await db.update(pptTasks).set({ timelineEvents: JSON.stringify(events) }).where(eq(pptTasks.id, taskId));
+    const events = JSON.parse(task.timelineEvents || '[]');
+    events.push({ time: new Date().toISOString(), event, status });
+    
+    await db.update(pptTasks).set({ timelineEvents: JSON.stringify(events) }).where(eq(pptTasks.id, taskId));
+  } catch (error) {
+    console.error("[Database] Failed to add timeline event:", error);
+    memStore.memoryAddTimelineEvent(taskId, event, status);
+  }
 }
 
 export async function deletePptTask(id: number): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  if (useMemoryStore()) {
+    memStore.memoryDeletePptTask(id);
+    return;
+  }
 
-  await db.delete(pptTasks).where(eq(pptTasks.id, id));
+  const db = await getDb();
+  if (!db) {
+    memStore.memoryDeletePptTask(id);
+    return;
+  }
+
+  try {
+    await db.delete(pptTasks).where(eq(pptTasks.id, id));
+  } catch (error) {
+    console.error("[Database] Failed to delete task:", error);
+    memStore.memoryDeletePptTask(id);
+  }
 }

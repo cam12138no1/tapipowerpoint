@@ -23,40 +23,10 @@ export async function createContext(
     const userOpenId = rawOpenId ? decodeURIComponent(rawOpenId) : undefined;
     
     if (username && userOpenId) {
-      // Try to find existing user by openId
-      const existingUser = await db.getUserByOpenId(userOpenId);
-      
-      // If not found, create new user
-      if (!existingUser) {
-        await db.upsertUser({
-          openId: userOpenId,
-          name: username,
-          lastSignedIn: new Date(),
-        });
-        const newUser = await db.getUserByOpenId(userOpenId);
-        
-        // If database is not available, create a mock user
-        if (!newUser) {
-          user = {
-            id: 1,
-            openId: userOpenId,
-            name: username,
-            email: null,
-            loginMethod: 'local',
-            role: 'user',
-            lastSignedIn: new Date(),
-            createdAt: new Date(),
-          } as User;
-        } else {
-          user = newUser;
-        }
-      } else {
-        // Update last signed in
-        await db.upsertUser({
-          openId: userOpenId,
-          lastSignedIn: new Date(),
-        });
-        user = existingUser;
+      // Use getOrCreateUser which handles both DB and memory store
+      const foundUser = await db.getOrCreateUser(userOpenId, username);
+      if (foundUser) {
+        user = foundUser as User;
       }
     }
   } catch (error) {
