@@ -1154,3 +1154,52 @@ export async function deletePptTask(id: number): Promise<void> {
     memStore.memoryDeletePptTask(id);
   }
 }
+
+// ============ Get or Create User ============
+
+export async function getOrCreateUser(openId: string, name: string) {
+  // First try to get existing user
+  const existingUser = await getUserByOpenId(openId);
+  if (existingUser) {
+    return existingUser;
+  }
+
+  // Create new user
+  try {
+    await upsertUser({
+      openId,
+      name,
+      email: null,
+      loginMethod: 'simple',
+      role: 'user',
+    });
+    return await getUserByOpenId(openId);
+  } catch (error) {
+    console.error("[Database] Failed to create user:", error);
+    // Try memory store as fallback
+    return memStore.memoryGetUserByOpenId(openId);
+  }
+}
+
+// ============ Add Timeline Event ============
+
+export async function addTimelineEvent(taskId: number, event: string, details?: string) {
+  try {
+    const task = await getPptTaskById(taskId);
+    if (!task) {
+      console.error("[Database] Task not found for timeline event:", taskId);
+      return;
+    }
+
+    const timeline = task.timeline || [];
+    timeline.push({
+      event,
+      details,
+      timestamp: new Date().toISOString()
+    });
+
+    await updatePptTask(taskId, { timeline });
+  } catch (error) {
+    console.error("[Database] Failed to add timeline event:", error);
+  }
+}
