@@ -9,10 +9,16 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 // Storage provider type
 type StorageProvider = 'r2' | 'forge' | 'local';
 
+// R2 client singleton
+let _r2Client: S3Client | null = null;
+let _r2ClientInitialized = false;
+let _r2ClientError: string | null = null;
+
 // Get the active storage provider
 function getStorageProvider(): StorageProvider {
   // Check R2 configuration first
   if (ENV.r2AccountId && ENV.r2AccessKeyId && ENV.r2SecretAccessKey && ENV.r2BucketName) {
+    // Validate R2 credentials format
     return 'r2';
   }
   
@@ -25,20 +31,35 @@ function getStorageProvider(): StorageProvider {
   return 'local';
 }
 
-// Create R2 client
+// Create R2 client with validation
 function createR2Client(): S3Client | null {
+  if (_r2ClientInitialized) {
+    return _r2Client;
+  }
+  
+  _r2ClientInitialized = true;
+  
   if (!ENV.r2AccountId || !ENV.r2AccessKeyId || !ENV.r2SecretAccessKey) {
+    _r2ClientError = 'R2 credentials not configured';
     return null;
   }
   
-  return new S3Client({
-    region: 'auto',
-    endpoint: `https://${ENV.r2AccountId}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: ENV.r2AccessKeyId,
-      secretAccessKey: ENV.r2SecretAccessKey,
-    },
-  });
+  try {
+    _r2Client = new S3Client({
+      region: 'auto',
+      endpoint: `https://${ENV.r2AccountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: ENV.r2AccessKeyId,
+        secretAccessKey: ENV.r2SecretAccessKey,
+      },
+    });
+    console.log('[Storage] R2 client initialized successfully');
+    return _r2Client;
+  } catch (error) {
+    _r2ClientError = error instanceof Error ? error.message : 'Failed to create R2 client';
+    console.error('[Storage] Failed to create R2 client:', error);
+    return null;
+  }
 }
 
 // R2 storage functions
@@ -49,7 +70,7 @@ async function r2Put(
 ): Promise<{ key: string; url: string }> {
   const client = createR2Client();
   if (!client) {
-    throw new Error('R2 client not configured');
+    throw new Error(_r2ClientError || 'R2 client not configured');
   }
   
   const key = relKey.replace(/^\/+/, '');
@@ -81,7 +102,7 @@ async function r2Put(
 async function r2Get(relKey: string): Promise<{ key: string; url: string }> {
   const client = createR2Client();
   if (!client) {
-    throw new Error('R2 client not configured');
+    throw new Error(_r2ClientError || 'R2 client not configured');
   }
   
   const key = relKey.replace(/^\/+/, '');
@@ -184,39 +205,91 @@ export async function storagePut(
 ): Promise<{ key: string; url: string }> {
   const provider = getStorageProvider();
   
-  console.log(`[Storage] Using ${provider} storage provider`);
+  console.log(`[Storage] Using ${provider} storage provider for upload`);
   
-  switch (provider) {
-    case 'r2':
-      return r2Put(relKey, data, contentType);
-    case 'forge':
-      return forgePut(relKey, data, contentType);
-    case 'local':
-    default:
-      return localStoragePut(relKey, data, contentType);
+  try {
+    switch (provider) {
+      case 'r2':
+        return await r2Put(relKey, data, contentType);
+      case 'forge':
+        return await forgePut(relKey, data, contentType);
+      case 'local':
+      default:
+        return await localStoragePut(relKey, data, contentType);
+    }
+  } catch (error) {
+    console.error(`[Storage] ${provider} upload failed:`, error);
+    
+    // Try fallback providers
+    if (provider === 'r2') {
+      console.log('[Storage] Falling back to forge storage');
+      if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+        try {
+          return await forgePut(relKey, data, contentType);
+        } catch (forgeError) {
+          console.error('[Storage] Forge fallback failed:', forgeError);
+        }
+      }
+      console.log('[Storage] Falling back to local storage');
+      return await localStoragePut(relKey, data, contentType);
+    }
+    
+    if (provider === 'forge') {
+      console.log('[Storage] Falling back to local storage');
+      return await localStoragePut(relKey, data, contentType);
+    }
+    
+    throw error;
   }
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const provider = getStorageProvider();
   
-  switch (provider) {
-    case 'r2':
-      return r2Get(relKey);
-    case 'forge':
-      return forgeGet(relKey);
-    case 'local':
-    default:
-      return localStorageGet(relKey);
+  try {
+    switch (provider) {
+      case 'r2':
+        return await r2Get(relKey);
+      case 'forge':
+        return await forgeGet(relKey);
+      case 'local':
+      default:
+        return await localStorageGet(relKey);
+    }
+  } catch (error) {
+    console.error(`[Storage] ${provider} get failed:`, error);
+    
+    // Try fallback providers
+    if (provider === 'r2') {
+      if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+        try {
+          return await forgeGet(relKey);
+        } catch (forgeError) {
+          console.error('[Storage] Forge fallback failed:', forgeError);
+        }
+      }
+      return await localStorageGet(relKey);
+    }
+    
+    if (provider === 'forge') {
+      return await localStorageGet(relKey);
+    }
+    
+    throw error;
   }
 }
 
 // Export storage provider info for debugging
-export function getStorageInfo(): { provider: StorageProvider; configured: boolean } {
+export function getStorageInfo(): { 
+  provider: StorageProvider; 
+  configured: boolean;
+  r2Error?: string;
+} {
   const provider = getStorageProvider();
   return {
     provider,
     configured: provider !== 'local',
+    r2Error: _r2ClientError || undefined,
   };
 }
 
