@@ -68,6 +68,37 @@ interface InteractionContent {
   placeholder?: string;
 }
 
+// 内部指令关键词过滤列表 - 这些内容不应该显示在前端
+const INTERNAL_INSTRUCTION_KEYWORDS = [
+  '品牌纯净要求',
+  '违反此规则将导致交付物被完全拒绝',
+  'Powered by Manus',
+  'Made with Manus',
+  '由Manus提供支持',
+  'Powered by AI',
+  'AI Generated',
+  '由AI生成',
+  '严禁在PPT的任何位置',
+  '封面页特别要求',
+  '绝对禁止出现',
+  '最重要的规则',
+  '必须首先阅读并严格遵守',
+  '再次强调品牌纯净要求',
+  '最终检查清单',
+  '交付物将被拒绝',
+  'PPT看起来100%像是人工专业制作',
+  '任何暗示内容由AI生成',
+  'OpenAI、Claude、GPT、Gemini',
+  '技术来源声明',
+  '请尽可能自主完成所有工作',
+  '只有在遇到真正无法判断的关键问题时才向用户提问',
+];
+
+// 检查文本是否包含内部指令关键词
+function containsInternalInstructions(text: string): boolean {
+  return INTERNAL_INSTRUCTION_KEYWORDS.some(keyword => text.includes(keyword));
+}
+
 // Parse API output to content blocks for LiveCanvas
 function parseOutputToBlocks(output: any[]): ContentBlock[] {
   if (!output || !Array.isArray(output)) return [];
@@ -82,6 +113,11 @@ function parseOutputToBlocks(output: any[]): ContentBlock[] {
       
       if (item.type === 'output_text' && item.text) {
         const text = item.text;
+        
+        // 过滤掉包含内部指令的内容
+        if (containsInternalInstructions(text)) {
+          return; // 跳过这个内容块
+        }
         
         // Check for slide content
         if (text.includes('## ') || text.includes('### ') || text.includes('幻灯片')) {
@@ -164,6 +200,11 @@ function parseOutputToSlides(output: any[]): SlideContent[] {
     message.content.forEach((item: any, itemIndex: number) => {
       if (item.type === 'output_text' && item.text) {
         const text = item.text;
+        
+        // 过滤掉包含内部指令的内容
+        if (containsInternalInstructions(text)) {
+          return; // 跳过这个内容块
+        }
         
         // Look for slide markers in the text
         const slideMatches = text.match(/(?:##|###)\s*(?:第\s*\d+\s*页|幻灯片\s*\d+|Slide\s*\d+|封面|目录|总结|结论)/gi);
