@@ -110,4 +110,14 @@ async function startServer() {
   });
 }
 
+// 全局错误处理
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Server] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[Server] Uncaught Exception:', error);
+  process.exit(1);
+});
+
 startServer().catch(console.error);

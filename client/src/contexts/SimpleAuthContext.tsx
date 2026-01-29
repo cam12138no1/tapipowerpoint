@@ -41,8 +41,8 @@ export function SimpleAuthProvider({ children }: { children: ReactNode }) {
       throw new Error('请输入用户名');
     }
 
-    // Generate a simple openId based on username
-    const openId = `simple_${username.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+    // Generate a fixed openId based on username (no timestamp to ensure same user gets same data)
+    const openId = `simple_${username.toLowerCase().replace(/\s+/g, '_')}`;
     
     const newUser: SimpleUser = {
       id: Date.now(), // Temporary ID, will be replaced by server

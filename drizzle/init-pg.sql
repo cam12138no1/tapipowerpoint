@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS ppt_tasks (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    project_id INTEGER NOT NULL,
+    project_id INTEGER,  -- 允许为空，任务可以不关联项目
     title VARCHAR(255) NOT NULL,
     engine_task_id VARCHAR(128),
     status status DEFAULT 'pending' NOT NULL,

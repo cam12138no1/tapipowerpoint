@@ -100,6 +100,7 @@ class PPTEngineClient {
 
     this.client = axios.create({
       baseURL,
+      timeout: 60000, // 60秒超时
       headers: {
         'API_KEY': apiKey || '',
         'Content-Type': 'application/json',

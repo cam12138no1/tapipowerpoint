@@ -1,17 +1,24 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
+import { checkDatabaseHealth } from "../db";
 
 export const systemRouter = router({
   health: publicProcedure
     .input(
       z.object({
-        timestamp: z.number().min(0, "timestamp cannot be negative"),
-      })
+        timestamp: z.number().min(0, "timestamp cannot be negative").optional(),
+      }).optional()
     )
-    .query(() => ({
-      ok: true,
-    })),
+    .query(async () => {
+      const dbHealth = await checkDatabaseHealth();
+      return {
+        ok: dbHealth.healthy,
+        status: dbHealth.healthy ? 'ok' : 'degraded',
+        database: dbHealth,
+        timestamp: new Date().toISOString(),
+      };
+    }),
 
   notifyOwner: adminProcedure
     .input(

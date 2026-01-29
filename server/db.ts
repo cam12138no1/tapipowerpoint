@@ -287,6 +287,27 @@ export function getDbType(): 'postgres' | 'mysql' | 'memory' {
   return _dbType;
 }
 
+// Check database health
+export async function checkDatabaseHealth(): Promise<{ healthy: boolean; type: string; latency?: number; error?: string }> {
+  const startTime = Date.now();
+  
+  if (_dbType === 'memory') {
+    return { healthy: true, type: 'memory', latency: 0 };
+  }
+  
+  if (!_pool) {
+    return { healthy: false, type: _dbType, error: 'No connection pool' };
+  }
+  
+  try {
+    await _pool.query('SELECT 1');
+    const latency = Date.now() - startTime;
+    return { healthy: true, type: _dbType, latency };
+  } catch (error: any) {
+    return { healthy: false, type: _dbType, error: error.message };
+  }
+}
+
 // Execute query with automatic retry on connection errors
 async function executeWithRetry<T>(
   operation: () => Promise<T>,
