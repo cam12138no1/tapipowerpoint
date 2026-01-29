@@ -157,12 +157,12 @@ export function memoryGetPptTasksByUserId(userId: number): PptTask[] {
     .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
 }
 
-export function memoryGetPptTaskWithProject(taskId: number): any | undefined {
+export function memoryGetPptTaskWithProject(taskId: number): { task: PptTask; project: Project | null } | undefined {
   const task = memoryStore.pptTasks.get(taskId);
   if (!task) return undefined;
   
-  const project = task.projectId ? memoryStore.projects.get(task.projectId) : null;
-  return { ...task, project };
+  const project = task.projectId ? memoryStore.projects.get(task.projectId) || null : null;
+  return { task, project };
 }
 
 export function memoryUpdatePptTask(id: number, data: Partial<InsertPptTask>): PptTask | undefined {

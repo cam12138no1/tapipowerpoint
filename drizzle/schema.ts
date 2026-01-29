@@ -60,7 +60,7 @@ export type InsertProject = typeof projects.$inferInsert;
 export const pptTasks = mysqlTable("pptTasks", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
-  projectId: int("projectId").notNull(),
+  projectId: int("projectId"),  // nullable - task can exist without a project
   
   title: varchar("title", { length: 255 }).notNull(),
   // Engine task reference (internal API)

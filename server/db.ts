@@ -1183,7 +1183,7 @@ export async function getOrCreateUser(openId: string, name: string) {
 
 // ============ Add Timeline Event ============
 
-export async function addTimelineEvent(taskId: number, event: string, details?: string) {
+export async function addTimelineEvent(taskId: number, event: string, status?: string) {
   try {
     const task = await getPptTaskById(taskId);
     if (!task) {
@@ -1191,14 +1191,16 @@ export async function addTimelineEvent(taskId: number, event: string, details?: 
       return;
     }
 
-    const timeline = task.timeline || [];
+    // Parse existing timeline events from JSON string
+    const timeline = JSON.parse(task.timelineEvents || '[]');
     timeline.push({
+      time: new Date().toISOString(),
       event,
-      details,
-      timestamp: new Date().toISOString()
+      status: status || 'info'
     });
 
-    await updatePptTask(taskId, { timeline });
+    // Store back as JSON string
+    await updatePptTask(taskId, { timelineEvents: JSON.stringify(timeline) });
   } catch (error) {
     console.error("[Database] Failed to add timeline event:", error);
   }

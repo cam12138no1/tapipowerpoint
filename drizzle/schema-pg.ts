@@ -54,7 +54,7 @@ export type InsertProject = typeof projects.$inferInsert;
 export const pptTasks = pgTable("ppt_tasks", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
-  projectId: integer("project_id").notNull(),
+  projectId: integer("project_id"),  // nullable - task can exist without a project
   title: varchar("title", { length: 255 }).notNull(),
   engineTaskId: varchar("engine_task_id", { length: 128 }),
   status: statusEnum("status").default("pending").notNull(),
