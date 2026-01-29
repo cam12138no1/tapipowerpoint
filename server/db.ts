@@ -153,7 +153,7 @@ async function connectWithRetry(maxRetries: number = 5, initialDelayMs: number =
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[Database] Connection attempt \${attempt}/\${maxRetries}...`);
+      console.log(`[Database] Connection attempt ${attempt}/${maxRetries}...`);
       
       const pool = createPool();
       
@@ -161,17 +161,17 @@ async function connectWithRetry(maxRetries: number = 5, initialDelayMs: number =
       const client = await pool.connect();
       try {
         await client.query('SELECT 1');
-        console.log(`[Database] Connection successful on attempt \${attempt}`);
+        console.log(`[Database] Connection successful on attempt ${attempt}`);
         _connectionHealthy = true;
         return pool;
       } finally {
         client.release();
       }
     } catch (error: any) {
-      console.warn(`[Database] Connection attempt \${attempt}/\${maxRetries} failed:`, error.message);
+      console.warn(`[Database] Connection attempt ${attempt}/${maxRetries} failed:`, error.message);
       
       if (attempt < maxRetries) {
-        console.log(`[Database] Retrying in \${delay}ms...`);
+        console.log(`[Database] Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay = Math.min(delay * 2, 10000); // Exponential backoff, max 10s
       }
