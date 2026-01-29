@@ -125,7 +125,8 @@ const taskRouter = router({
       if (!taskWithProject || taskWithProject.task.userId !== ctx.user.id) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
       }
-      return taskWithProject;
+      // Return flattened structure: { ...task, project } for frontend compatibility
+      return { ...taskWithProject.task, project: taskWithProject.project };
     }),
 
   create: protectedProcedure
