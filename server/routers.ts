@@ -131,23 +131,26 @@ const taskRouter = router({
   create: protectedProcedure
     .input(z.object({
       title: z.string().min(1),
-      projectId: z.number(),
+      projectId: z.number().optional(), // 设计规范现在是可选的
       sourceFileName: z.string().optional(),
       sourceFileUrl: z.string().optional(),
       proposalContent: z.string().optional(),
       imageAttachments: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Verify project exists and belongs to user
-      const project = await db.getProjectById(input.projectId);
-      if (!project || project.userId !== ctx.user.id) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+      // Verify project exists and belongs to user (if projectId is provided)
+      let project = null;
+      if (input.projectId) {
+        project = await db.getProjectById(input.projectId);
+        if (!project || project.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+        }
       }
 
       // Create task in pending state
       const task = await db.createPptTask({
         userId: ctx.user.id,
-        projectId: input.projectId,
+        projectId: input.projectId || null, // 可以为null
         title: input.title,
         status: "pending",
         currentStep: "正在初始化...",
@@ -181,9 +184,11 @@ const taskRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
       }
 
-      const project = await db.getProjectById(task.projectId);
-      if (!project) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+      // Project is optional now - only fetch if projectId exists
+      let project = null;
+      if (task.projectId) {
+        project = await db.getProjectById(task.projectId);
+        // Project not found is not an error - user may not have selected a design spec
       }
 
       // Update task with file IDs
@@ -224,7 +229,7 @@ const taskRouter = router({
         // Create engine task
         const engineTask = await pptEngine.createTask({
           prompt,
-          projectId: project.engineProjectId || undefined,
+          projectId: project?.engineProjectId || undefined,
           attachments,
           createShareableLink: true,
           interactiveMode: true,
@@ -442,9 +447,11 @@ const taskRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "只能重试失败的任务" });
       }
 
-      const project = await db.getProjectById(task.projectId);
-      if (!project) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Project not found" });
+      // Project is optional now - only fetch if projectId exists
+      let project = null;
+      if (task.projectId) {
+        project = await db.getProjectById(task.projectId);
+        // Project not found is not an error - user may not have selected a design spec
       }
 
       // Reset task state but keep original configuration
@@ -489,7 +496,7 @@ const taskRouter = router({
         // Create new engine task with preserved configuration
         const engineTask = await pptEngine.createTask({
           prompt,
-          projectId: project.engineProjectId || undefined,
+          projectId: project?.engineProjectId || undefined,
           attachments,
           createShareableLink: true,
           interactiveMode: true,

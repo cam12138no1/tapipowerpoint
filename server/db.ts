@@ -86,7 +86,7 @@ async function initPostgresTables(pool: Pool): Promise<void> {
       CREATE TABLE IF NOT EXISTS ppt_tasks (
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL,
-          project_id INTEGER NOT NULL,
+          project_id INTEGER,  -- 可以为NULL，设计规范是可选的
           title VARCHAR(255) NOT NULL,
           engine_task_id VARCHAR(128),
           status status DEFAULT 'pending' NOT NULL,
@@ -115,6 +115,14 @@ async function initPostgresTables(pool: Pool): Promise<void> {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ppt_tasks_user_id ON ppt_tasks(user_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ppt_tasks_project_id ON ppt_tasks(project_id);`);
+    
+    // Migrate existing table: make project_id nullable if it's not already
+    try {
+      await pool.query(`ALTER TABLE ppt_tasks ALTER COLUMN project_id DROP NOT NULL;`);
+      console.log("[Database] Made project_id nullable");
+    } catch (e) {
+      // Column might already be nullable, ignore error
+    }
     
     console.log("[Database] PostgreSQL tables initialized successfully");
   } catch (error) {
