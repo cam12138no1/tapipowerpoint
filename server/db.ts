@@ -32,24 +32,24 @@ async function initPostgresTables(pool: Pool): Promise<void> {
   
   try {
     // Create enums
-    await pool.query(\`
+    await pool.query(`
       DO $$ BEGIN
           CREATE TYPE role AS ENUM ('user', 'admin');
       EXCEPTION
           WHEN duplicate_object THEN null;
       END $$;
-    \`);
+    `);
     
-    await pool.query(\`
+    await pool.query(`
       DO $$ BEGIN
           CREATE TYPE status AS ENUM ('pending', 'uploading', 'running', 'ask', 'completed', 'failed');
       EXCEPTION
           WHEN duplicate_object THEN null;
       END $$;
-    \`);
+    `);
     
     // Create users table
-    await pool.query(\`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
           open_id VARCHAR(64) NOT NULL UNIQUE,
@@ -61,10 +61,10 @@ async function initPostgresTables(pool: Pool): Promise<void> {
           updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
           last_signed_in TIMESTAMP DEFAULT NOW() NOT NULL
       );
-    \`);
+    `);
     
     // Create projects table
-    await pool.query(\`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS projects (
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL,
@@ -80,10 +80,10 @@ async function initPostgresTables(pool: Pool): Promise<void> {
           created_at TIMESTAMP DEFAULT NOW() NOT NULL,
           updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
-    \`);
+    `);
     
     // Create ppt_tasks table
-    await pool.query(\`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS ppt_tasks (
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL,
@@ -109,17 +109,17 @@ async function initPostgresTables(pool: Pool): Promise<void> {
           created_at TIMESTAMP DEFAULT NOW() NOT NULL,
           updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
-    \`);
+    `);
     
     // Create indexes
-    await pool.query(\`CREATE INDEX IF NOT EXISTS idx_users_open_id ON users(open_id);\`);
-    await pool.query(\`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);\`);
-    await pool.query(\`CREATE INDEX IF NOT EXISTS idx_ppt_tasks_user_id ON ppt_tasks(user_id);\`);
-    await pool.query(\`CREATE INDEX IF NOT EXISTS idx_ppt_tasks_project_id ON ppt_tasks(project_id);\`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_open_id ON users(open_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ppt_tasks_user_id ON ppt_tasks(user_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ppt_tasks_project_id ON ppt_tasks(project_id);`);
     
     // Migrate existing table: make project_id nullable if it's not already
     try {
-      await pool.query(\`ALTER TABLE ppt_tasks ALTER COLUMN project_id DROP NOT NULL;\`);
+      await pool.query(`ALTER TABLE ppt_tasks ALTER COLUMN project_id DROP NOT NULL;`);
       console.log("[Database] Made project_id nullable");
     } catch (e) {
       // Column might already be nullable, ignore error
@@ -153,7 +153,7 @@ async function connectWithRetry(maxRetries: number = 5, initialDelayMs: number =
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(\`[Database] Connection attempt \${attempt}/\${maxRetries}...\`);
+      console.log(`[Database] Connection attempt \${attempt}/\${maxRetries}...`);
       
       const pool = createPool();
       
@@ -161,17 +161,17 @@ async function connectWithRetry(maxRetries: number = 5, initialDelayMs: number =
       const client = await pool.connect();
       try {
         await client.query('SELECT 1');
-        console.log(\`[Database] Connection successful on attempt \${attempt}\`);
+        console.log(`[Database] Connection successful on attempt \${attempt}`);
         _connectionHealthy = true;
         return pool;
       } finally {
         client.release();
       }
     } catch (error: any) {
-      console.warn(\`[Database] Connection attempt \${attempt}/\${maxRetries} failed:\`, error.message);
+      console.warn(`[Database] Connection attempt \${attempt}/\${maxRetries} failed:`, error.message);
       
       if (attempt < maxRetries) {
-        console.log(\`[Database] Retrying in \${delay}ms...\`);
+        console.log(`[Database] Retrying in \${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay = Math.min(delay * 2, 10000); // Exponential backoff, max 10s
       }
@@ -304,7 +304,7 @@ async function executeWithRetry<T>(
         error.code === '57P01';
       
       if (isConnectionError && attempt < maxRetries) {
-        console.warn(\`[Database] Connection error on attempt \${attempt}, retrying...\`);
+        console.warn(`[Database] Connection error on attempt \${attempt}, retrying...`);
         _connectionHealthy = false;
         
         // Try to get a healthy pool
@@ -351,7 +351,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
           const loginMethod = user.loginMethod ?? null;
           const role = user.role ?? (user.openId === ENV.ownerOpenId ? 'admin' : 'user');
           
-          await pool.query(\`
+          await pool.query(`
             INSERT INTO users (open_id, name, email, login_method, role, last_signed_in)
             VALUES ($1, $2, $3, $4, $5, NOW())
             ON CONFLICT (open_id) 
@@ -362,7 +362,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
               role = COALESCE($5, users.role),
               last_signed_in = NOW(),
               updated_at = NOW()
-          \`, [user.openId, name, email, loginMethod, role]);
+          `, [user.openId, name, email, loginMethod, role]);
         } else {
           // MySQL upsert
           const values: InsertUser = {
@@ -436,12 +436,12 @@ export async function getUserByOpenId(openId: string) {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             SELECT id, open_id as "openId", name, email, login_method as "loginMethod", 
                    role, created_at as "createdAt", updated_at as "updatedAt", 
                    last_signed_in as "lastSignedIn"
             FROM users WHERE open_id = $1
-          \`, [openId]);
+          `, [openId]);
           
           return result.rows[0] || null;
         } else {
@@ -474,12 +474,12 @@ export async function getAllUsers() {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             SELECT id, open_id as "openId", name, email, login_method as "loginMethod", 
                    role, created_at as "createdAt", updated_at as "updatedAt", 
                    last_signed_in as "lastSignedIn"
             FROM users ORDER BY created_at DESC
-          \`);
+          `);
           
           return result.rows;
         } else {
@@ -513,7 +513,7 @@ export async function createProject(data: InsertProject): Promise<Project> {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             INSERT INTO projects (user_id, name, engine_project_id, design_spec, primary_color, 
                                   secondary_color, accent_color, font_family, logo_url, logo_file_key)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -522,7 +522,7 @@ export async function createProject(data: InsertProject): Promise<Project> {
                       secondary_color as "secondaryColor", accent_color as "accentColor",
                       font_family as "fontFamily", logo_url as "logoUrl", logo_file_key as "logoFileKey",
                       created_at as "createdAt", updated_at as "updatedAt"
-          \`, [
+          `, [
             data.userId,
             data.name,
             data.engineProjectId || null,
@@ -568,14 +568,14 @@ export async function getProjectById(id: number): Promise<Project | undefined> {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             SELECT id, user_id as "userId", name, engine_project_id as "engineProjectId", 
                    design_spec as "designSpec", primary_color as "primaryColor", 
                    secondary_color as "secondaryColor", accent_color as "accentColor",
                    font_family as "fontFamily", logo_url as "logoUrl", logo_file_key as "logoFileKey",
                    created_at as "createdAt", updated_at as "updatedAt"
             FROM projects WHERE id = $1
-          \`, [id]);
+          `, [id]);
           
           return result.rows[0];
         } else {
@@ -608,14 +608,14 @@ export async function getProjectsByUserId(userId: number): Promise<Project[]> {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             SELECT id, user_id as "userId", name, engine_project_id as "engineProjectId", 
                    design_spec as "designSpec", primary_color as "primaryColor", 
                    secondary_color as "secondaryColor", accent_color as "accentColor",
                    font_family as "fontFamily", logo_url as "logoUrl", logo_file_key as "logoFileKey",
                    created_at as "createdAt", updated_at as "updatedAt"
             FROM projects WHERE user_id = $1 ORDER BY created_at DESC
-          \`, [userId]);
+          `, [userId]);
           
           return result.rows;
         } else {
@@ -653,48 +653,48 @@ export async function updateProject(id: number, data: Partial<InsertProject>): P
           let paramIndex = 1;
           
           if (data.name !== undefined) {
-            updates.push(\`name = $\${paramIndex++}\`);
+            updates.push(`name = $\${paramIndex++}`);
             values.push(data.name);
           }
           if (data.engineProjectId !== undefined) {
-            updates.push(\`engine_project_id = $\${paramIndex++}\`);
+            updates.push(`engine_project_id = $\${paramIndex++}`);
             values.push(data.engineProjectId);
           }
           if (data.designSpec !== undefined) {
-            updates.push(\`design_spec = $\${paramIndex++}\`);
+            updates.push(`design_spec = $\${paramIndex++}`);
             values.push(data.designSpec);
           }
           if (data.primaryColor !== undefined) {
-            updates.push(\`primary_color = $\${paramIndex++}\`);
+            updates.push(`primary_color = $\${paramIndex++}`);
             values.push(data.primaryColor);
           }
           if (data.secondaryColor !== undefined) {
-            updates.push(\`secondary_color = $\${paramIndex++}\`);
+            updates.push(`secondary_color = $\${paramIndex++}`);
             values.push(data.secondaryColor);
           }
           if (data.accentColor !== undefined) {
-            updates.push(\`accent_color = $\${paramIndex++}\`);
+            updates.push(`accent_color = $\${paramIndex++}`);
             values.push(data.accentColor);
           }
           if (data.fontFamily !== undefined) {
-            updates.push(\`font_family = $\${paramIndex++}\`);
+            updates.push(`font_family = $\${paramIndex++}`);
             values.push(data.fontFamily);
           }
           if (data.logoUrl !== undefined) {
-            updates.push(\`logo_url = $\${paramIndex++}\`);
+            updates.push(`logo_url = $\${paramIndex++}`);
             values.push(data.logoUrl);
           }
           if (data.logoFileKey !== undefined) {
-            updates.push(\`logo_file_key = $\${paramIndex++}\`);
+            updates.push(`logo_file_key = $\${paramIndex++}`);
             values.push(data.logoFileKey);
           }
           
-          updates.push(\`updated_at = NOW()\`);
+          updates.push(`updated_at = NOW()`);
           values.push(id);
           
-          await pool.query(\`
+          await pool.query(`
             UPDATE projects SET \${updates.join(', ')} WHERE id = $\${paramIndex}
-          \`, values);
+          `, values);
           
           return getProjectById(id);
         } else {
@@ -729,7 +729,7 @@ export async function deleteProject(id: number): Promise<void> {
         if (_dbType === 'postgres') {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
-          await pool.query(\`DELETE FROM projects WHERE id = $1\`, [id]);
+          await pool.query(`DELETE FROM projects WHERE id = $1`, [id]);
         } else {
           await db.delete(projects).where(eq(projects.id, id));
         }
@@ -768,7 +768,7 @@ export async function createPptTask(data: InsertPptTask): Promise<PptTask> {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             INSERT INTO ppt_tasks (user_id, project_id, title, engine_task_id, status, current_step, progress, 
                                    source_file_name, source_file_id, source_file_url, image_attachments,
                                    interaction_data, output_content, share_url, result_pptx_url, result_pdf_url,
@@ -783,7 +783,7 @@ export async function createPptTask(data: InsertPptTask): Promise<PptTask> {
                       result_pdf_url as "resultPdfUrl", result_file_key as "resultFileKey",
                       error_message as "errorMessage", timeline_events as "timelineEvents",
                       created_at as "createdAt", updated_at as "updatedAt"
-          \`, [
+          `, [
             data.userId,
             data.projectId,
             data.title,
@@ -843,7 +843,7 @@ export async function getPptTaskById(id: number): Promise<PptTask | undefined> {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             SELECT id, user_id as "userId", project_id as "projectId", title, 
                    engine_task_id as "engineTaskId", status, current_step as "currentStep", progress,
                    source_file_name as "sourceFileName", source_file_id as "sourceFileId", 
@@ -855,7 +855,7 @@ export async function getPptTaskById(id: number): Promise<PptTask | undefined> {
                    error_message as "errorMessage", timeline_events as "timelineEvents",
                    created_at as "createdAt", updated_at as "updatedAt"
             FROM ppt_tasks WHERE id = $1
-          \`, [id]);
+          `, [id]);
           
           return result.rows[0];
         } else {
@@ -888,7 +888,7 @@ export async function getPptTasksByUserId(userId: number): Promise<PptTask[]> {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
           
-          const result = await pool.query(\`
+          const result = await pool.query(`
             SELECT id, user_id as "userId", project_id as "projectId", title, 
                    engine_task_id as "engineTaskId", status, current_step as "currentStep", progress,
                    source_file_name as "sourceFileName", source_file_id as "sourceFileId", 
@@ -900,7 +900,7 @@ export async function getPptTasksByUserId(userId: number): Promise<PptTask[]> {
                    error_message as "errorMessage", timeline_events as "timelineEvents",
                    created_at as "createdAt", updated_at as "updatedAt"
             FROM ppt_tasks WHERE user_id = $1 ORDER BY created_at DESC
-          \`, [userId]);
+          `, [userId]);
           
           return result.rows;
         } else {
@@ -939,7 +939,7 @@ export async function getPptTaskWithProject(taskId: number): Promise<{ task: Ppt
           if (!pool) throw new Error('Pool not available');
           
           // Get task first
-          const taskResult = await pool.query(\`
+          const taskResult = await pool.query(`
             SELECT id, user_id as "userId", project_id as "projectId", title, 
                    engine_task_id as "engineTaskId", status, current_step as "currentStep", progress,
                    source_file_name as "sourceFileName", source_file_id as "sourceFileId", 
@@ -951,7 +951,7 @@ export async function getPptTaskWithProject(taskId: number): Promise<{ task: Ppt
                    error_message as "errorMessage", timeline_events as "timelineEvents",
                    created_at as "createdAt", updated_at as "updatedAt"
             FROM ppt_tasks WHERE id = $1
-          \`, [taskId]);
+          `, [taskId]);
           
           const task = taskResult.rows[0];
           if (!task) return undefined;
@@ -959,14 +959,14 @@ export async function getPptTaskWithProject(taskId: number): Promise<{ task: Ppt
           // Get project if projectId exists
           let project: Project | null = null;
           if (task.projectId) {
-            const projectResult = await pool.query(\`
+            const projectResult = await pool.query(`
               SELECT id, user_id as "userId", name, engine_project_id as "engineProjectId", 
                      design_spec as "designSpec", primary_color as "primaryColor", 
                      secondary_color as "secondaryColor", accent_color as "accentColor",
                      font_family as "fontFamily", logo_url as "logoUrl", logo_file_key as "logoFileKey",
                      created_at as "createdAt", updated_at as "updatedAt"
               FROM projects WHERE id = $1
-            \`, [task.projectId]);
+            `, [task.projectId]);
             
             project = projectResult.rows[0] || null;
           }
@@ -1024,75 +1024,75 @@ export async function updatePptTask(id: number, data: Partial<InsertPptTask>): P
           let paramIndex = 1;
           
           if (data.title !== undefined) {
-            updates.push(\`title = $\${paramIndex++}\`);
+            updates.push(`title = $\${paramIndex++}`);
             values.push(data.title);
           }
           if (data.engineTaskId !== undefined) {
-            updates.push(\`engine_task_id = $\${paramIndex++}\`);
+            updates.push(`engine_task_id = $\${paramIndex++}`);
             values.push(data.engineTaskId);
           }
           if (data.status !== undefined) {
-            updates.push(\`status = $\${paramIndex++}\`);
+            updates.push(`status = $\${paramIndex++}`);
             values.push(data.status);
           }
           if (data.currentStep !== undefined) {
-            updates.push(\`current_step = $\${paramIndex++}\`);
+            updates.push(`current_step = $\${paramIndex++}`);
             values.push(data.currentStep);
           }
           if (data.progress !== undefined) {
-            updates.push(\`progress = $\${paramIndex++}\`);
+            updates.push(`progress = $\${paramIndex++}`);
             values.push(data.progress);
           }
           if (data.sourceFileName !== undefined) {
-            updates.push(\`source_file_name = $\${paramIndex++}\`);
+            updates.push(`source_file_name = $\${paramIndex++}`);
             values.push(data.sourceFileName);
           }
           if (data.sourceFileId !== undefined) {
-            updates.push(\`source_file_id = $\${paramIndex++}\`);
+            updates.push(`source_file_id = $\${paramIndex++}`);
             values.push(data.sourceFileId);
           }
           if (data.sourceFileUrl !== undefined) {
-            updates.push(\`source_file_url = $\${paramIndex++}\`);
+            updates.push(`source_file_url = $\${paramIndex++}`);
             values.push(data.sourceFileUrl);
           }
           if (data.proposalContent !== undefined) {
-            updates.push(\`proposal_content = $\${paramIndex++}\`);
+            updates.push(`proposal_content = $\${paramIndex++}`);
             values.push(data.proposalContent);
           }
           if (data.imageAttachments !== undefined) {
-            updates.push(\`image_attachments = $\${paramIndex++}\`);
+            updates.push(`image_attachments = $\${paramIndex++}`);
             values.push(data.imageAttachments);
           }
           if (data.interactionData !== undefined) {
-            updates.push(\`interaction_data = $\${paramIndex++}\`);
+            updates.push(`interaction_data = $\${paramIndex++}`);
             values.push(data.interactionData);
           }
           if (data.outputContent !== undefined) {
-            updates.push(\`output_content = $\${paramIndex++}\`);
+            updates.push(`output_content = $\${paramIndex++}`);
             values.push(data.outputContent);
           }
           if (data.shareUrl !== undefined) {
-            updates.push(\`share_url = $\${paramIndex++}\`);
+            updates.push(`share_url = $\${paramIndex++}`);
             values.push(data.shareUrl);
           }
           if (data.resultPptxUrl !== undefined) {
-            updates.push(\`result_pptx_url = $\${paramIndex++}\`);
+            updates.push(`result_pptx_url = $\${paramIndex++}`);
             values.push(data.resultPptxUrl);
           }
           if (data.resultPdfUrl !== undefined) {
-            updates.push(\`result_pdf_url = $\${paramIndex++}\`);
+            updates.push(`result_pdf_url = $\${paramIndex++}`);
             values.push(data.resultPdfUrl);
           }
           if (data.resultFileKey !== undefined) {
-            updates.push(\`result_file_key = $\${paramIndex++}\`);
+            updates.push(`result_file_key = $\${paramIndex++}`);
             values.push(data.resultFileKey);
           }
           if (data.errorMessage !== undefined) {
-            updates.push(\`error_message = $\${paramIndex++}\`);
+            updates.push(`error_message = $\${paramIndex++}`);
             values.push(data.errorMessage);
           }
           if (data.timelineEvents !== undefined) {
-            updates.push(\`timeline_events = $\${paramIndex++}\`);
+            updates.push(`timeline_events = $\${paramIndex++}`);
             values.push(data.timelineEvents);
           }
           
@@ -1100,12 +1100,12 @@ export async function updatePptTask(id: number, data: Partial<InsertPptTask>): P
             return getPptTaskById(id);
           }
           
-          updates.push(\`updated_at = NOW()\`);
+          updates.push(`updated_at = NOW()`);
           values.push(id);
           
-          await pool.query(\`
+          await pool.query(`
             UPDATE ppt_tasks SET \${updates.join(', ')} WHERE id = $\${paramIndex}
-          \`, values);
+          `, values);
           
           return getPptTaskById(id);
         } else {
@@ -1140,7 +1140,7 @@ export async function deletePptTask(id: number): Promise<void> {
         if (_dbType === 'postgres') {
           const pool = await getHealthyPool();
           if (!pool) throw new Error('Pool not available');
-          await pool.query(\`DELETE FROM ppt_tasks WHERE id = $1\`, [id]);
+          await pool.query(`DELETE FROM ppt_tasks WHERE id = $1`, [id]);
         } else {
           await db.delete(pptTasks).where(eq(pptTasks.id, id));
         }
