@@ -11,10 +11,10 @@ import {
   MessageSquare,
   Send,
   ThumbsUp,
-  ThumbsDown,
   Edit3,
   Sparkles,
-  AlertCircle,
+  AlertTriangle,
+  Clock,
 } from "lucide-react";
 
 interface InteractionImage {
@@ -40,7 +40,7 @@ interface UserInteractionPanelProps {
 
 // Parse AI output to extract interaction content
 function parseInteractionContent(interactionData: string | null, outputContent: string | null) {
-  let title = "需要您的确认";
+  let title = "AI 需要您的输入";
   let content = "";
   let images: InteractionImage[] = [];
   let options: InteractionOption[] = [];
@@ -229,9 +229,19 @@ export function UserInteractionPanel({
   };
   
   return (
-    <Card className="border-2 shadow-pro overflow-hidden animate-fade-in" style={{ borderColor: 'oklch(0.85 0.08 85)', background: 'oklch(0.98 0.01 85)' }}>
+    <Card className="border-2 shadow-lg overflow-hidden animate-pulse-slow" style={{ borderColor: '#f59e0b', background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' }}>
+      {/* Attention Banner */}
+      <div className="bg-amber-500 text-white px-4 py-3 flex items-center gap-3">
+        <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+        <div className="flex-1">
+          <span className="font-semibold">任务暂停 - 需要您的输入</span>
+          <span className="ml-2 text-amber-100 text-sm">请在下方回复后任务将继续执行</span>
+        </div>
+        <Clock className="w-5 h-5 animate-pulse" />
+      </div>
+      
       <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2" style={{ color: 'oklch(0.35 0.08 85)' }}>
+        <CardTitle className="flex items-center gap-2 text-amber-900">
           {interactionType === 'image_confirmation' ? (
             <ImageIcon className="w-5 h-5" />
           ) : (
@@ -240,7 +250,7 @@ export function UserInteractionPanel({
           {title}
         </CardTitle>
         {content && (
-          <CardDescription className="text-base whitespace-pre-wrap mt-2" style={{ color: 'oklch(0.45 0.05 85)' }}>
+          <CardDescription className="text-base whitespace-pre-wrap mt-2 text-amber-800">
             {content}
           </CardDescription>
         )}
@@ -251,23 +261,23 @@ export function UserInteractionPanel({
         {images.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">
+              <span className="text-sm font-medium text-amber-700">
                 AI 生成的配图 ({images.length} 张)
               </span>
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800">
                 点击图片可选择/取消
               </Badge>
             </div>
             
-            <ScrollArea className="h-[300px] rounded-lg border bg-background p-3">
+            <ScrollArea className="h-[300px] rounded-lg border bg-white p-3">
               <div className="grid grid-cols-2 gap-3">
                 {images.map((image, index) => (
                   <div
                     key={image.url}
                     className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all hover:shadow-lg ${
                       selectedImages.has(image.url)
-                        ? "border-primary ring-2 ring-primary/20"
-                        : "border-border hover:border-muted-foreground/30"
+                        ? "border-amber-500 ring-2 ring-amber-500/20"
+                        : "border-gray-200 hover:border-amber-300"
                     }`}
                     onClick={() => handleImageToggle(image.url)}
                   >
@@ -305,24 +315,24 @@ export function UserInteractionPanel({
                 disabled={isSubmitting}
                 className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                   selectedOption === option.id
-                    ? "border-primary bg-accent shadow-pro-sm"
-                    : "border-border bg-card hover:border-muted-foreground/30 hover:shadow-pro-sm"
+                    ? "border-amber-500 bg-amber-50 shadow-md"
+                    : "border-gray-200 bg-white hover:border-amber-300 hover:shadow-md"
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                    selectedOption === option.id ? "border-primary bg-primary" : "border-muted-foreground/30"
+                    selectedOption === option.id ? "border-amber-500 bg-amber-500" : "border-gray-300"
                   }`}>
                     {selectedOption === option.id ? (
                       <CheckCircle2 className="w-4 h-4 text-white" />
                     ) : (
-                      <span className="text-xs text-muted-foreground">{option.id}</span>
+                      <span className="text-xs text-gray-500">{option.id}</span>
                     )}
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">{option.label}</p>
+                    <p className="font-medium text-gray-900">{option.label}</p>
                     {option.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{option.description}</p>
+                      <p className="text-sm text-gray-500 mt-1">{option.description}</p>
                     )}
                   </div>
                 </div>
@@ -338,7 +348,7 @@ export function UserInteractionPanel({
               <Button
                 onClick={handleQuickConfirm}
                 disabled={isSubmitting}
-                className="flex-1 h-12 btn-pro-gold"
+                className="flex-1 h-12 bg-amber-500 hover:bg-amber-600 text-white"
               >
                 {isSubmitting ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -351,7 +361,7 @@ export function UserInteractionPanel({
                 onClick={handleQuickReject}
                 disabled={isSubmitting}
                 variant="outline"
-                className="flex-1 h-12"
+                className="flex-1 h-12 border-amber-500 text-amber-700 hover:bg-amber-50"
               >
                 <Edit3 className="w-4 h-4 mr-2" />
                 提供修改意见
@@ -363,7 +373,7 @@ export function UserInteractionPanel({
                 onClick={handleConfirmImages}
                 disabled={isSubmitting}
                 variant="secondary"
-                className="w-full"
+                className="w-full bg-amber-100 text-amber-800 hover:bg-amber-200"
               >
                 <CheckCircle2 className="w-4 h-4 mr-2" />
                 仅使用选中的 {selectedImages.size} 张图片
@@ -372,25 +382,32 @@ export function UserInteractionPanel({
           </div>
         )}
         
-        {/* Custom Text Input */}
+        {/* Custom Text Input - Always show for text type or when user wants to provide custom input */}
         {(interactionType === 'text' || showCustomInput) && (
           <div className="space-y-3">
+            <div className="bg-amber-100 border border-amber-300 rounded-lg p-3">
+              <p className="text-sm text-amber-800 font-medium flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                请在下方输入您的回复，AI 将根据您的输入继续执行任务
+              </p>
+            </div>
+            
             <Textarea
               placeholder={
                 interactionType === 'image_confirmation'
                   ? "请输入您对配图的修改意见，例如：\n- 第2页的图片请换成更现代的风格\n- 封面图片颜色太暗，请调亮一些\n- 请为第5页添加一张数据图表"
-                  : "请输入您的回复..."
+                  : "请输入您的回复...\n\n例如：\n- 继续执行\n- 请使用更专业的风格\n- 添加更多数据图表"
               }
               value={textResponse}
               onChange={(e) => setTextResponse(e.target.value)}
-              className="min-h-[120px] resize-none"
+              className="min-h-[120px] resize-none border-amber-300 focus:border-amber-500 focus:ring-amber-500"
             />
             
             <div className="flex gap-3">
               <Button
                 onClick={handleSubmitCustom}
                 disabled={isSubmitting || !textResponse.trim()}
-                className="flex-1 h-12 btn-pro-gold"
+                className="flex-1 h-12 bg-amber-500 hover:bg-amber-600 text-white"
               >
                 {isSubmitting ? (
                   <>
@@ -400,7 +417,7 @@ export function UserInteractionPanel({
                 ) : (
                   <>
                     <Send className="w-4 h-4 mr-2" />
-                    发送回复
+                    发送回复并继续任务
                   </>
                 )}
               </Button>
@@ -409,7 +426,7 @@ export function UserInteractionPanel({
                 <Button
                   onClick={() => setShowCustomInput(false)}
                   variant="outline"
-                  className="h-12"
+                  className="h-12 border-amber-500 text-amber-700"
                 >
                   返回
                 </Button>
@@ -419,12 +436,13 @@ export function UserInteractionPanel({
         )}
         
         {/* Help Text */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50">
-          <Sparkles className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-          <p className="text-xs text-muted-foreground">
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-amber-700">
+            <strong>重要提示：</strong>
             {interactionType === 'image_confirmation'
-              ? "AI 会根据您的确认或修改意见继续生成 PPT。如果您对配图满意，直接点击确认即可。"
-              : "请仔细阅读 AI 的问题，并提供您的回复。您的输入将帮助 AI 更好地完成 PPT 生成。"}
+              ? "AI 正在等待您的确认。如果您对配图满意，直接点击确认即可；如果需要修改，请点击【提供修改意见】并输入您的要求。"
+              : "AI 遇到了需要您决策的问题。请仔细阅读上方内容，并在输入框中提供您的回复。任务将在您回复后继续执行。"}
           </p>
         </div>
       </CardContent>

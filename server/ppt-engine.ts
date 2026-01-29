@@ -243,7 +243,7 @@ export function getMimeType(filename: string): string {
   return mimeTypes[ext || ''] || 'application/octet-stream';
 }
 
-// Build PPT generation prompt
+// Build PPT generation prompt - optimized for autonomous execution
 export function buildPPTPrompt(
   sourceFileId: string | null,
   images: Array<{ fileId: string; placement: string }>,
@@ -251,6 +251,11 @@ export function buildPPTPrompt(
 ): string {
   const lines = [
     '请根据我提供的资料和要求，制作一份专业的行业PPT。',
+    '',
+    '**重要执行原则**：',
+    '- **自主决策**：请尽可能自主完成所有工作，不要频繁询问用户确认。',
+    '- **高效执行**：遇到需要选择的情况时，请根据专业判断直接做出最优决策。',
+    '- **仅在必要时询问**：只有在遇到无法自行判断的关键问题时才向用户提问。',
     '',
     '**任务要求**：',
     '',
@@ -260,41 +265,57 @@ export function buildPPTPrompt(
 
   // 根据输入模式添加不同的内容生成指令
   if (proposalContent) {
-    lines.push('2. **内容生成**：基于我提供的Proposal内容，提炼核心要点，并将其组织成逻辑清晰的PPT页面结构。');
+    lines.push('2. **内容生成**：');
+    lines.push('   - 基于我提供的Proposal内容，提炼核心要点');
+    lines.push('   - 将内容组织成逻辑清晰的PPT页面结构');
+    lines.push('   - 如果内容不够详细，请自动搜索相关资料进行补充');
+    lines.push('   - 确保每页PPT都有充实的内容和专业的表达');
     lines.push('');
     lines.push('**Proposal内容**：');
     lines.push('```');
     lines.push(proposalContent);
     lines.push('```');
   } else if (sourceFileId) {
-    lines.push('2. **内容生成**：基于我提供的源文档，提炼核心内容，并将其组织成逻辑清晰的PPT页面结构。');
+    lines.push('2. **内容生成**：');
+    lines.push('   - 基于我提供的源文档，提炼核心内容');
+    lines.push('   - 将内容组织成逻辑清晰的PPT页面结构');
+    lines.push('   - 如有需要，可自动搜索补充相关数据和信息');
   } else {
     lines.push('2. **内容生成**：请根据项目设计规范和配图信息，生成一份专业的PPT。');
   }
 
   if (images.length > 0) {
     lines.push('');
-    lines.push('3. **智能配图**：');
+    lines.push('3. **智能配图**（自动执行，无需确认）：');
     lines.push('   a. **优先使用指定图片**：我为部分页面指定了配图，请按要求使用：');
     images.forEach(({ fileId, placement }) => {
       lines.push(`      - ${placement}：使用附件 \`${fileId}\``);
     });
-    lines.push('   b. **资料内部查找**：对于未指定配图的页面，请首先在源文档中寻找是否有相关的图表或图片可以使用。');
-    lines.push('   c. **网络搜索补充**：如果资料中也无可用图片，请根据该页面的内容主题，在网络上搜索一张高质量、风格匹配、无版权风险的商业图片。');
-    lines.push('   d. **图片审查**：对于所有从网络搜索到的图片，**必须在最终定稿前，通过向我提问（ask）的方式，将图片展示给我进行确认。** 只有在我确认后，才能将图片放入PPT。');
+    lines.push('   b. **资料内部查找**：对于未指定配图的页面，请首先在源文档中寻找相关图表或图片。');
+    lines.push('   c. **网络搜索补充**：如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片并直接使用。');
+    lines.push('   d. **自主选择**：请根据专业判断直接选择最合适的图片，无需向用户确认。');
   } else {
     lines.push('');
-    lines.push('3. **智能配图**：');
-    lines.push('   a. 请首先在源文档中寻找是否有相关的图表或图片可以使用。');
-    lines.push('   b. 如果资料中无可用图片，请根据页面内容主题，在网络上搜索高质量、风格匹配的商业图片。');
-    lines.push('   c. 对于网络搜索到的图片，请通过提问方式让我确认后再使用。');
+    lines.push('3. **智能配图**（自动执行，无需确认）：');
+    lines.push('   a. 请首先在源文档中寻找相关图表或图片。');
+    lines.push('   b. 如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片。');
+    lines.push('   c. 请根据专业判断直接选择最合适的图片，无需向用户确认。');
   }
 
   lines.push('');
-  lines.push('4. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
+  lines.push('4. **数据与信息补充**：');
+  lines.push('   - 如果Proposal或文档中的数据不够完整，请自动搜索最新的行业数据进行补充');
+  lines.push('   - 可以添加相关的市场趋势、统计数据、案例分析等内容');
+  lines.push('   - 确保PPT内容专业、充实、有说服力');
+
+  lines.push('');
+  lines.push('5. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
   
   lines.push('');
-  lines.push('5. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。');
+  lines.push('6. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。');
+
+  lines.push('');
+  lines.push('**再次强调**：请尽可能自主完成所有工作，只有在遇到真正无法判断的关键问题时才向用户提问。');
 
   return lines.join('\n');
 }
