@@ -296,40 +296,70 @@ const taskRouter = router({
           let resultPptxUrl: string | undefined;
           let resultPdfUrl: string | undefined;
           
-          // Check attachments from the parsed output
+          console.log(`[Task ${input.taskId}] Task completed, extracting files...`);
+          console.log(`[Task ${input.taskId}] Attachments count: ${engineTask.attachments?.length || 0}`);
+          
+          // Check attachments from the parsed output (already filtered to latest message in ppt-engine)
           if (engineTask.attachments && engineTask.attachments.length > 0) {
             for (const att of engineTask.attachments) {
               const filename = att.filename || att.file_name || "";
               const url = att.url || att.download_url;
               
+              console.log(`[Task ${input.taskId}] Processing attachment: ${filename}`);
+              
               if (filename.toLowerCase().endsWith(".pptx") && url) {
                 // Download and store in S3 for permanent access
                 try {
+                  console.log(`[Task ${input.taskId}] Downloading PPTX from: ${url.substring(0, 100)}...`);
                   const response = await fetch(url);
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                  }
                   const buffer = Buffer.from(await response.arrayBuffer());
-                  const fileKey = `results/${ctx.user.id}/${task.id}/${nanoid()}.pptx`;
+                  console.log(`[Task ${input.taskId}] Downloaded PPTX, size: ${buffer.length} bytes`);
+                  
+                  // Use task title in filename for better identification
+                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
+                  const timestamp = Date.now();
+                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pptx`;
+                  
                   const { url: s3Url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
                   resultPptxUrl = s3Url;
+                  console.log(`[Task ${input.taskId}] Stored PPTX to S3: ${fileKey}`);
                 } catch (e) {
-                  console.error("[Task] Failed to store PPTX:", e);
+                  console.error(`[Task ${input.taskId}] Failed to store PPTX:`, e);
                   resultPptxUrl = url;
                 }
               }
               
               if (filename.toLowerCase().endsWith(".pdf") && url) {
                 try {
+                  console.log(`[Task ${input.taskId}] Downloading PDF from: ${url.substring(0, 100)}...`);
                   const response = await fetch(url);
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                  }
                   const buffer = Buffer.from(await response.arrayBuffer());
-                  const fileKey = `results/${ctx.user.id}/${task.id}/${nanoid()}.pdf`;
+                  console.log(`[Task ${input.taskId}] Downloaded PDF, size: ${buffer.length} bytes`);
+                  
+                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
+                  const timestamp = Date.now();
+                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pdf`;
+                  
                   const { url: s3Url } = await storagePut(fileKey, buffer, "application/pdf");
                   resultPdfUrl = s3Url;
+                  console.log(`[Task ${input.taskId}] Stored PDF to S3: ${fileKey}`);
                 } catch (e) {
-                  console.error("[Task] Failed to store PDF:", e);
+                  console.error(`[Task ${input.taskId}] Failed to store PDF:`, e);
                   resultPdfUrl = url;
                 }
               }
             }
+          } else {
+            console.warn(`[Task ${input.taskId}] No attachments found in completed task!`);
           }
+          
+          console.log(`[Task ${input.taskId}] Final URLs - PPTX: ${resultPptxUrl ? 'set' : 'not set'}, PDF: ${resultPdfUrl ? 'set' : 'not set'}`);
 
           await db.updatePptTask(input.taskId, {
             status: "completed",

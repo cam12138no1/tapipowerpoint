@@ -168,21 +168,35 @@ class PPTEngineClient {
     const output = response.data.output;
     
     // Extract attachments from output messages if present
+    // IMPORTANT: Only extract from the LAST assistant message to get the latest files
     const attachments: EngineTask['attachments'] = [];
-    if (Array.isArray(output)) {
-      output.forEach((msg: OutputMessage) => {
-        if (msg.content && Array.isArray(msg.content)) {
+    if (Array.isArray(output) && output.length > 0) {
+      // Find the last assistant message with file attachments
+      // Iterate from the end to find the most recent files
+      for (let i = output.length - 1; i >= 0; i--) {
+        const msg = output[i] as OutputMessage;
+        if (msg.role === 'assistant' && msg.content && Array.isArray(msg.content)) {
+          const filesInMessage: EngineTask['attachments'] = [];
           msg.content.forEach((item: OutputContent) => {
-            if (item.fileUrl && item.fileName) {
-              attachments.push({
+            if (item.type === 'output_file' && item.fileUrl && item.fileName) {
+              filesInMessage.push({
                 filename: item.fileName,
                 url: item.fileUrl,
               });
+              console.log(`[PPTEngine] Found file in message ${i}: ${item.fileName}`);
             }
           });
+          // If we found files in this message, use them and stop looking
+          if (filesInMessage.length > 0) {
+            attachments.push(...filesInMessage);
+            console.log(`[PPTEngine] Using ${filesInMessage.length} files from message ${i} (latest with files)`);
+            break;
+          }
         }
-      });
+      }
     }
+    
+    console.log(`[PPTEngine] Total attachments extracted: ${attachments.length}`);
     
     return {
       id: response.data.id || taskId,
@@ -306,7 +320,7 @@ export function buildPPTPrompt(
   designSpec?: DesignSpec | null
 ): string {
   const lines = [
-    '# PPT 制作任务',
+    '# PPT 制作任务 - 咨询级专业标准',
     '',
     '## ⚠️ 最重要的规则（必须首先阅读并严格遵守）',
     '',
@@ -328,7 +342,57 @@ export function buildPPTPrompt(
     '',
     '---',
     '',
-    '请根据我提供的资料和要求，制作一份专业的行业PPT。',
+    '## 📋 咨询级PPT质量标准',
+    '',
+    '请按照**麦肯锡、BCG、贝恩**等顶级咨询公司的PPT标准制作，具体要求：',
+    '',
+    '### 内容质量要求',
+    '',
+    '1. **金字塔原则**：',
+    '   - 每页PPT必须有一个清晰的核心观点（放在页面顶部作为标题）',
+    '   - 标题必须是完整的陈述句，能够独立传达关键信息',
+    '   - 正文内容用于支撑和论证标题观点',
+    '',
+    '2. **MECE原则**：',
+    '   - 内容分类必须相互独立、完全穷尽',
+    '   - 避免重复和遗漏',
+    '   - 每个要点之间逻辑清晰',
+    '',
+    '3. **内容深度**：',
+    '   - 每页PPT必须有实质性内容，避免空洞的口号',
+    '   - 使用具体数据、案例、对比来支撑观点',
+    '   - 提供可操作的洞察和建议',
+    '',
+    '### 视觉设计标准',
+    '',
+    '1. **排版规范**：',
+    '   - 标题字号：28-32pt，加粗',
+    '   - 正文字号：18-22pt',
+    '   - 注释/来源：10-12pt',
+    '   - 行距：1.2-1.5倍',
+    '   - 页边距：保持一致的留白',
+    '',
+    '2. **视觉层次**：',
+    '   - 使用颜色和字体大小区分信息层级',
+    '   - 重要信息使用强调色突出',
+    '   - 保持视觉重心平衡',
+    '',
+    '3. **图表设计**：',
+    '   - 图表必须有清晰的标题和数据标签',
+    '   - 使用与主题色一致的配色方案',
+    '   - 数据可视化要直观易懂',
+    '   - 复杂数据优先使用图表而非表格',
+    '',
+    '### 结构框架',
+    '',
+    '1. **封面页**：标题、副标题、日期、公司名称',
+    '2. **目录页**：清晰的章节结构',
+    '3. **执行摘要**：核心发现和建议的概述（1-2页）',
+    '4. **正文内容**：按逻辑顺序展开',
+    '5. **结论/建议**：总结和下一步行动',
+    '6. **附录**（如需要）：详细数据和参考资料',
+    '',
+    '---',
     '',
     '**重要执行原则**：',
     '- **自主决策**：请尽可能自主完成所有工作，不要频繁询问用户确认。',
@@ -486,10 +550,16 @@ export function buildPPTPrompt(
   }
 
   lines.push('');
-  lines.push('3. **数据与信息补充**：');
-  lines.push('   - 如果Proposal或文档中的数据不够完整，请自动搜索最新的行业数据进行补充');
-  lines.push('   - 可以添加相关的市场趋势、统计数据、案例分析等内容');
-  lines.push('   - 确保PPT内容专业、充实、有说服力');
+  lines.push('3. **数据与信息补充**（提升内容质量的关键）：');
+  lines.push('   - 如果Proposal或文档中的数据不够完整，**必须**自动搜索最新的行业数据进行补充');
+  lines.push('   - 搜索并添加以下类型的支撑材料：');
+  lines.push('     * 最新的市场规模和增长率数据');
+  lines.push('     * 行业趋势和预测报告');
+  lines.push('     * 竞争格局和市场份额分析');
+  lines.push('     * 成功案例和标杆企业实践');
+  lines.push('     * 权威机构的研究报告引用');
+  lines.push('   - 所有数据必须标注来源，增强可信度');
+  lines.push('   - 确保PPT内容专业、充实、有说服力，达到咨询报告的质量标准');
 
   lines.push('');
   lines.push('4. **图片布局规范**（极其重要，必须严格遵守）：');
@@ -504,7 +574,17 @@ export function buildPPTPrompt(
   lines.push('   - 这是专业交付的基本要求，图片遮挡文字是不可接受的错误');
 
   lines.push('');
-  lines.push('5. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
+  lines.push('5. **最终交付前的质量检查**：');
+  lines.push('   在生成最终PPTX文件之前，请确保：');
+  lines.push('   - [ ] 每页都有明确的核心观点作为标题');
+  lines.push('   - [ ] 内容逻辑清晰，符合金字塔原则');
+  lines.push('   - [ ] 关键数据都有来源标注');
+  lines.push('   - [ ] 图表清晰易懂，有标题和数据标签');
+  lines.push('   - [ ] 所有文字完全可见，没有被图片遮挡');
+  lines.push('   - [ ] 配色和字体符合设计规范');
+  lines.push('   - [ ] 没有任何AI工具品牌信息');
+  lines.push('');
+  lines.push('6. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
   
   lines.push('');
   lines.push('---');
