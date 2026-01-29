@@ -14,6 +14,8 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { downloadFile } from "@/lib/download";
+import { toast } from "sonner";
 
 interface PPTPreviewProps {
   pptxUrl: string;
@@ -35,6 +37,7 @@ export function PPTPreview({ pptxUrl, pdfUrl, title }: Omit<PPTPreviewProps, 'sh
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
   const [previewMode, setPreviewMode] = useState<'pdf' | 'download'>('pdf');
+  const [isDownloading, setIsDownloading] = useState<'pptx' | 'pdf' | null>(null);
 
   // Determine best preview mode - only use PDF or download, no external iframe
   useEffect(() => {
@@ -65,6 +68,36 @@ export function PPTPreview({ pptxUrl, pdfUrl, title }: Omit<PPTPreviewProps, 'sh
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
+  };
+
+  // 真实文件下载处理
+  const handleDownloadPptx = async () => {
+    setIsDownloading('pptx');
+    try {
+      await downloadFile(pptxUrl, `${title}.pptx`);
+      toast.success('PPTX 下载成功');
+    } catch (error) {
+      toast.error('下载失败，请重试');
+      // 回退到直接打开链接
+      window.open(pptxUrl, '_blank');
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!pdfUrl) return;
+    setIsDownloading('pdf');
+    try {
+      await downloadFile(pdfUrl, `${title}.pdf`);
+      toast.success('PDF 下载成功');
+    } catch (error) {
+      toast.error('下载失败，请重试');
+      // 回退到直接打开链接
+      window.open(pdfUrl, '_blank');
+    } finally {
+      setIsDownloading(null);
+    }
   };
 
   // Keyboard navigation
@@ -165,11 +198,17 @@ export function PPTPreview({ pptxUrl, pdfUrl, title }: Omit<PPTPreviewProps, 'sh
                 点击下方按钮下载查看完整 PPT
               </p>
               <div className="flex flex-wrap justify-center gap-3">
-                <Button asChild className="btn-pro-gold">
-                  <a href={pptxUrl} download={`${title}.pptx`}>
+                <Button 
+                  className="btn-pro-gold"
+                  onClick={handleDownloadPptx}
+                  disabled={isDownloading === 'pptx'}
+                >
+                  {isDownloading === 'pptx' ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
                     <Download className="w-4 h-4 mr-2" />
-                    下载 PPTX
-                  </a>
+                  )}
+                  下载 PPTX
                 </Button>
               </div>
             </div>
@@ -183,18 +222,32 @@ export function PPTPreview({ pptxUrl, pdfUrl, title }: Omit<PPTPreviewProps, 'sh
           </div>
 
           <div className="flex items-center gap-3">
-            <Button asChild variant="outline" size="sm">
-              <a href={pptxUrl} download={`${title}.pptx`}>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleDownloadPptx}
+              disabled={isDownloading === 'pptx'}
+            >
+              {isDownloading === 'pptx' ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
                 <Download className="w-4 h-4 mr-2" />
-                下载 PPTX
-              </a>
+              )}
+              下载 PPTX
             </Button>
             {pdfUrl && (
-              <Button asChild variant="outline" size="sm">
-                <a href={pdfUrl} download={`${title}.pdf`}>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleDownloadPdf}
+                disabled={isDownloading === 'pdf'}
+              >
+                {isDownloading === 'pdf' ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
                   <Download className="w-4 h-4 mr-2" />
-                  下载 PDF
-                </a>
+                )}
+                下载 PDF
               </Button>
             )}
           </div>

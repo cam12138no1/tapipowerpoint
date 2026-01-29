@@ -304,7 +304,7 @@ async function executeWithRetry<T>(
         error.code === '57P01';
       
       if (isConnectionError && attempt < maxRetries) {
-        console.warn(`[Database] Connection error on attempt \${attempt}, retrying...`);
+        console.warn(`[Database] Connection error on attempt ${attempt}, retrying...`);
         _connectionHealthy = false;
         
         // Try to get a healthy pool
@@ -653,39 +653,39 @@ export async function updateProject(id: number, data: Partial<InsertProject>): P
           let paramIndex = 1;
           
           if (data.name !== undefined) {
-            updates.push(`name = $\${paramIndex++}`);
+            updates.push(`name = $${paramIndex++}`);
             values.push(data.name);
           }
           if (data.engineProjectId !== undefined) {
-            updates.push(`engine_project_id = $\${paramIndex++}`);
+            updates.push(`engine_project_id = $${paramIndex++}`);
             values.push(data.engineProjectId);
           }
           if (data.designSpec !== undefined) {
-            updates.push(`design_spec = $\${paramIndex++}`);
+            updates.push(`design_spec = $${paramIndex++}`);
             values.push(data.designSpec);
           }
           if (data.primaryColor !== undefined) {
-            updates.push(`primary_color = $\${paramIndex++}`);
+            updates.push(`primary_color = $${paramIndex++}`);
             values.push(data.primaryColor);
           }
           if (data.secondaryColor !== undefined) {
-            updates.push(`secondary_color = $\${paramIndex++}`);
+            updates.push(`secondary_color = $${paramIndex++}`);
             values.push(data.secondaryColor);
           }
           if (data.accentColor !== undefined) {
-            updates.push(`accent_color = $\${paramIndex++}`);
+            updates.push(`accent_color = $${paramIndex++}`);
             values.push(data.accentColor);
           }
           if (data.fontFamily !== undefined) {
-            updates.push(`font_family = $\${paramIndex++}`);
+            updates.push(`font_family = $${paramIndex++}`);
             values.push(data.fontFamily);
           }
           if (data.logoUrl !== undefined) {
-            updates.push(`logo_url = $\${paramIndex++}`);
+            updates.push(`logo_url = $${paramIndex++}`);
             values.push(data.logoUrl);
           }
           if (data.logoFileKey !== undefined) {
-            updates.push(`logo_file_key = $\${paramIndex++}`);
+            updates.push(`logo_file_key = $${paramIndex++}`);
             values.push(data.logoFileKey);
           }
           
@@ -693,7 +693,7 @@ export async function updateProject(id: number, data: Partial<InsertProject>): P
           values.push(id);
           
           await pool.query(`
-            UPDATE projects SET \${updates.join(', ')} WHERE id = $\${paramIndex}
+            UPDATE projects SET ${updates.join(', ')} WHERE id = $${paramIndex}
           `, values);
           
           return getProjectById(id);
@@ -1024,75 +1024,75 @@ export async function updatePptTask(id: number, data: Partial<InsertPptTask>): P
           let paramIndex = 1;
           
           if (data.title !== undefined) {
-            updates.push(`title = $\${paramIndex++}`);
+            updates.push(`title = $${paramIndex++}`);
             values.push(data.title);
           }
           if (data.engineTaskId !== undefined) {
-            updates.push(`engine_task_id = $\${paramIndex++}`);
+            updates.push(`engine_task_id = $${paramIndex++}`);
             values.push(data.engineTaskId);
           }
           if (data.status !== undefined) {
-            updates.push(`status = $\${paramIndex++}`);
+            updates.push(`status = $${paramIndex++}`);
             values.push(data.status);
           }
           if (data.currentStep !== undefined) {
-            updates.push(`current_step = $\${paramIndex++}`);
+            updates.push(`current_step = $${paramIndex++}`);
             values.push(data.currentStep);
           }
           if (data.progress !== undefined) {
-            updates.push(`progress = $\${paramIndex++}`);
+            updates.push(`progress = $${paramIndex++}`);
             values.push(data.progress);
           }
           if (data.sourceFileName !== undefined) {
-            updates.push(`source_file_name = $\${paramIndex++}`);
+            updates.push(`source_file_name = $${paramIndex++}`);
             values.push(data.sourceFileName);
           }
           if (data.sourceFileId !== undefined) {
-            updates.push(`source_file_id = $\${paramIndex++}`);
+            updates.push(`source_file_id = $${paramIndex++}`);
             values.push(data.sourceFileId);
           }
           if (data.sourceFileUrl !== undefined) {
-            updates.push(`source_file_url = $\${paramIndex++}`);
+            updates.push(`source_file_url = $${paramIndex++}`);
             values.push(data.sourceFileUrl);
           }
           if (data.proposalContent !== undefined) {
-            updates.push(`proposal_content = $\${paramIndex++}`);
+            updates.push(`proposal_content = $${paramIndex++}`);
             values.push(data.proposalContent);
           }
           if (data.imageAttachments !== undefined) {
-            updates.push(`image_attachments = $\${paramIndex++}`);
+            updates.push(`image_attachments = $${paramIndex++}`);
             values.push(data.imageAttachments);
           }
           if (data.interactionData !== undefined) {
-            updates.push(`interaction_data = $\${paramIndex++}`);
+            updates.push(`interaction_data = $${paramIndex++}`);
             values.push(data.interactionData);
           }
           if (data.outputContent !== undefined) {
-            updates.push(`output_content = $\${paramIndex++}`);
+            updates.push(`output_content = $${paramIndex++}`);
             values.push(data.outputContent);
           }
           if (data.shareUrl !== undefined) {
-            updates.push(`share_url = $\${paramIndex++}`);
+            updates.push(`share_url = $${paramIndex++}`);
             values.push(data.shareUrl);
           }
           if (data.resultPptxUrl !== undefined) {
-            updates.push(`result_pptx_url = $\${paramIndex++}`);
+            updates.push(`result_pptx_url = $${paramIndex++}`);
             values.push(data.resultPptxUrl);
           }
           if (data.resultPdfUrl !== undefined) {
-            updates.push(`result_pdf_url = $\${paramIndex++}`);
+            updates.push(`result_pdf_url = $${paramIndex++}`);
             values.push(data.resultPdfUrl);
           }
           if (data.resultFileKey !== undefined) {
-            updates.push(`result_file_key = $\${paramIndex++}`);
+            updates.push(`result_file_key = $${paramIndex++}`);
             values.push(data.resultFileKey);
           }
           if (data.errorMessage !== undefined) {
-            updates.push(`error_message = $\${paramIndex++}`);
+            updates.push(`error_message = $${paramIndex++}`);
             values.push(data.errorMessage);
           }
           if (data.timelineEvents !== undefined) {
-            updates.push(`timeline_events = $\${paramIndex++}`);
+            updates.push(`timeline_events = $${paramIndex++}`);
             values.push(data.timelineEvents);
           }
           
@@ -1104,7 +1104,7 @@ export async function updatePptTask(id: number, data: Partial<InsertPptTask>): P
           values.push(id);
           
           await pool.query(`
-            UPDATE ppt_tasks SET \${updates.join(', ')} WHERE id = $\${paramIndex}
+            UPDATE ppt_tasks SET ${updates.join(', ')} WHERE id = $${paramIndex}
           `, values);
           
           return getPptTaskById(id);
