@@ -145,6 +145,17 @@ export async function getDb() {
         _pool = new Pool({
           connectionString: process.env.DATABASE_URL,
           ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+          // 连接池配置优化
+          max: 10,                    // 最大连接数
+          min: 2,                     // 最小连接数
+          idleTimeoutMillis: 30000,   // 空闲连接超时时间
+          connectionTimeoutMillis: 10000, // 连接超时时间
+          allowExitOnIdle: false,     // 防止空闲时退出
+        });
+        
+        // 监听连接池错误
+        _pool.on('error', (err) => {
+          console.error('[Database] Pool error:', err.message);
         });
         
         // Initialize tables
@@ -753,7 +764,11 @@ export async function getPptTaskWithProject(taskId: number) {
     const task = await getPptTaskById(taskId);
     if (!task) return undefined;
 
-    const project = await getProjectById(task.projectId);
+    // projectId可能为null（设计规范是可选的）
+    let project = null;
+    if (task.projectId) {
+      project = await getProjectById(task.projectId);
+    }
     
     return { ...task, project };
   } catch (error) {
