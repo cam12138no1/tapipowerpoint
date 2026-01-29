@@ -169,7 +169,10 @@ const taskRouter = router({
       proposalContent: z.string().optional(),
       imageFileIds: z.array(z.object({
         fileId: z.string(),
-        placement: z.string(),
+        usageMode: z.enum(['must_use', 'suggest_use', 'ai_decide']).optional(),
+        category: z.enum(['cover', 'content', 'chart', 'logo', 'background', 'other']).optional(),
+        description: z.string().optional(),
+        placement: z.string().optional(), // Legacy support
       })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {

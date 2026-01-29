@@ -254,10 +254,53 @@ export interface DesignSpec {
   logoUrl?: string;
 }
 
-// Build PPT generation prompt - optimized for autonomous execution
+// Image usage mode type
+export type ImageUsageMode = 'must_use' | 'suggest_use' | 'ai_decide';
+
+// Image category type
+export type ImageCategory = 'cover' | 'content' | 'chart' | 'logo' | 'background' | 'other';
+
+// Enhanced image configuration interface
+export interface ImageConfig {
+  fileId: string;
+  usageMode: ImageUsageMode;
+  category: ImageCategory;
+  description: string;
+}
+
+// Legacy image format (for backward compatibility)
+export interface LegacyImageConfig {
+  fileId: string;
+  placement: string;
+}
+
+// Helper function to get usage mode label in Chinese
+function getUsageModeLabel(mode: ImageUsageMode): string {
+  const labels: Record<ImageUsageMode, string> = {
+    must_use: '必须使用',
+    suggest_use: '建议使用',
+    ai_decide: 'AI自行决定',
+  };
+  return labels[mode] || 'AI自行决定';
+}
+
+// Helper function to get category label in Chinese
+function getCategoryLabel(category: ImageCategory): string {
+  const labels: Record<ImageCategory, string> = {
+    cover: '封面/封底',
+    content: '内容配图',
+    chart: '数据图表',
+    logo: 'Logo/品牌标识',
+    background: '背景图片',
+    other: '其他用途',
+  };
+  return labels[category] || '其他用途';
+}
+
+// Build PPT generation prompt - optimized for autonomous execution with modular image config
 export function buildPPTPrompt(
   sourceFileId: string | null,
-  images: Array<{ fileId: string; placement: string }>,
+  images: Array<ImageConfig | LegacyImageConfig>,
   proposalContent?: string,
   designSpec?: DesignSpec | null
 ): string {
@@ -320,16 +363,96 @@ export function buildPPTPrompt(
     lines.push('1. **内容生成**：请根据设计规范和配图信息，生成一份专业的PPT。');
   }
 
+  // 处理图片配置 - 支持新旧两种格式
   if (images.length > 0) {
     lines.push('');
-    lines.push('2. **智能配图**（自动执行，无需确认）：');
-    lines.push('   a. **优先使用指定图片**：我为部分页面指定了配图，请按要求使用：');
-    images.forEach(({ fileId, placement }) => {
-      lines.push(`      - ${placement}：使用附件 \`${fileId}\``);
+    lines.push('2. **配图管理**（请严格按照以下要求处理用户提供的图片）：');
+    lines.push('');
+    
+    // 分类处理图片
+    const mustUseImages: Array<ImageConfig | LegacyImageConfig> = [];
+    const suggestUseImages: Array<ImageConfig | LegacyImageConfig> = [];
+    const aiDecideImages: Array<ImageConfig | LegacyImageConfig> = [];
+    
+    images.forEach(img => {
+      // 检查是否是新格式
+      if ('usageMode' in img) {
+        switch (img.usageMode) {
+          case 'must_use':
+            mustUseImages.push(img);
+            break;
+          case 'suggest_use':
+            suggestUseImages.push(img);
+            break;
+          case 'ai_decide':
+          default:
+            aiDecideImages.push(img);
+            break;
+        }
+      } else {
+        // 旧格式，默认为AI自行决定
+        aiDecideImages.push(img);
+      }
     });
-    lines.push('   b. **资料内部查找**：对于未指定配图的页面，请首先在源文档中寻找相关图表或图片。');
-    lines.push('   c. **网络搜索补充**：如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片并直接使用。');
-    lines.push('   d. **自主选择**：请根据专业判断直接选择最合适的图片，无需向用户确认。');
+    
+    // 必须使用的图片
+    if (mustUseImages.length > 0) {
+      lines.push('   **【必须使用】以下图片必须在PPT中使用，不可忽略：**');
+      mustUseImages.forEach((img, index) => {
+        if ('usageMode' in img) {
+          const categoryLabel = getCategoryLabel(img.category);
+          lines.push(`   ${index + 1}. 附件 \`${img.fileId}\``);
+          lines.push(`      - 用途：${categoryLabel}`);
+          if (img.description) {
+            lines.push(`      - 说明：${img.description}`);
+          }
+        } else {
+          lines.push(`   ${index + 1}. 附件 \`${img.fileId}\`：${img.placement}`);
+        }
+      });
+      lines.push('');
+    }
+    
+    // 建议使用的图片
+    if (suggestUseImages.length > 0) {
+      lines.push('   **【建议使用】以下图片优先考虑使用，如果适合内容请使用：**');
+      suggestUseImages.forEach((img, index) => {
+        if ('usageMode' in img) {
+          const categoryLabel = getCategoryLabel(img.category);
+          lines.push(`   ${index + 1}. 附件 \`${img.fileId}\``);
+          lines.push(`      - 用途：${categoryLabel}`);
+          if (img.description) {
+            lines.push(`      - 说明：${img.description}`);
+          }
+        } else {
+          lines.push(`   ${index + 1}. 附件 \`${img.fileId}\`：${img.placement}`);
+        }
+      });
+      lines.push('');
+    }
+    
+    // AI自行决定的图片
+    if (aiDecideImages.length > 0) {
+      lines.push('   **【AI自行决定】以下图片由AI根据内容相关性决定是否使用：**');
+      aiDecideImages.forEach((img, index) => {
+        if ('usageMode' in img) {
+          const categoryLabel = getCategoryLabel(img.category);
+          lines.push(`   ${index + 1}. 附件 \`${img.fileId}\``);
+          lines.push(`      - 用途：${categoryLabel}`);
+          if (img.description) {
+            lines.push(`      - 说明：${img.description}`);
+          }
+        } else {
+          lines.push(`   ${index + 1}. 附件 \`${img.fileId}\`：${img.placement || '未指定用途'}`);
+        }
+      });
+      lines.push('');
+    }
+    
+    lines.push('   **其他配图处理**：');
+    lines.push('   - 对于未指定配图的页面，请首先在源文档中寻找相关图表或图片');
+    lines.push('   - 如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片');
+    lines.push('   - 请根据专业判断直接选择最合适的图片，无需向用户确认');
   } else {
     lines.push('');
     lines.push('2. **智能配图**（自动执行，无需确认）：');
@@ -348,7 +471,7 @@ export function buildPPTPrompt(
   lines.push('4. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
   
   lines.push('');
-  lines.push('5. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。');
+  lines.push('5. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。这是面向大型企业客户的专业交付，必须确保品牌纯净。');
 
   lines.push('');
   lines.push('**再次强调**：请尽可能自主完成所有工作，只有在遇到真正无法判断的关键问题时才向用户提问。');

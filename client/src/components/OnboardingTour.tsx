@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { X, ChevronLeft, ChevronRight, CheckCircle, Sparkles, Palette, FileText, Image, Zap } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, CheckCircle, Sparkles, Palette, FileText, Image, Zap, Settings, Layers } from "lucide-react";
 
 // 教程步骤定义
 interface TourStep {
@@ -12,6 +12,7 @@ interface TourStep {
   position: 'top' | 'bottom' | 'left' | 'right' | 'center';
   icon: React.ReactNode;
   tip?: string;
+  details?: string[]; // 详细说明列表
 }
 
 const tourSteps: TourStep[] = [
@@ -21,25 +22,47 @@ const tourSteps: TourStep[] = [
     description: '这是一个AI驱动的专业PPT生成平台。只需几个简单步骤，即可生成咨询级演示文稿。让我们开始快速了解如何使用吧！',
     position: 'center',
     icon: <Sparkles className="w-8 h-8 text-amber-500" />,
-    tip: '整个教程大约需要2分钟',
+    tip: '整个教程大约需要3分钟',
   },
   {
     id: 'design-spec',
-    title: '第一步：选择设计规范',
-    description: '设计规范定义了PPT的视觉风格，包括配色方案、字体等。选择一个已创建的规范，或从专业模板库创建新规范。',
+    title: '第一步：选择设计规范（可选）',
+    description: '设计规范定义了PPT的视觉风格。这一步是可选的——如果不选择，AI将自动选择合适的专业风格。',
     targetSelector: '[data-tour="design-spec"]',
     position: 'bottom',
     icon: <Palette className="w-6 h-6 text-blue-500" />,
-    tip: '设计规范确保您的PPT风格统一、专业',
+    tip: '建议：如需统一品牌风格，请先创建设计规范',
+    details: [
+      '配色方案：主色、辅助色、强调色',
+      '字体设置：标题字体、正文字体、字号',
+      '版式规范：页面比例、边距、行距',
+    ],
+  },
+  {
+    id: 'design-spec-config',
+    title: '如何配置设计规范',
+    description: '点击侧边栏的"设计规范"菜单，可以创建和管理您的设计规范。您可以从专业模板库快速创建，或完全自定义。',
+    position: 'center',
+    icon: <Settings className="w-6 h-6 text-purple-500" />,
+    tip: '专业模板包括：麦肯锡、BCG、Bain等咨询风格',
+    details: [
+      '从模板创建：选择专业模板，一键应用',
+      '自定义创建：完全自定义配色、字体、版式',
+      '管理规范：编辑、删除已创建的规范',
+    ],
   },
   {
     id: 'title-input',
     title: '第二步：输入PPT标题',
-    description: '输入您的PPT标题。如果您不上传文档或输入详细内容，AI将根据标题自动搜索资料并生成PPT。',
+    description: '输入您的PPT标题。这是唯一的必填项——如果您不上传文档，AI将根据标题自动搜索资料并生成PPT。',
     targetSelector: '[data-tour="title-input"]',
     position: 'bottom',
     icon: <FileText className="w-6 h-6 text-green-500" />,
     tip: '标题越具体，生成的内容越精准',
+    details: [
+      '好的标题示例："2024年Q4中国新能源汽车市场分析报告"',
+      '避免过于简单的标题，如"市场分析"',
+    ],
   },
   {
     id: 'content-source',
@@ -49,15 +72,33 @@ const tourSteps: TourStep[] = [
     position: 'top',
     icon: <FileText className="w-6 h-6 text-purple-500" />,
     tip: '支持PDF、Word、TXT、Markdown格式',
+    details: [
+      '上传文档：AI将提取文档内容作为PPT素材',
+      '输入Proposal：直接描述您想要的PPT内容和结构',
+      '留空：AI将根据标题自动搜索资料',
+    ],
   },
   {
     id: 'image-upload',
     title: '第四步：上传配图（可选）',
-    description: '您可以预先上传希望在PPT中使用的图片，并描述放置位置。AI会优先使用您指定的图片，其他页面会自动搜索匹配的配图。',
+    description: '您可以预先上传希望在PPT中使用的图片。现在支持精确控制每张图片的使用方式和用途。',
     targetSelector: '[data-tour="image-upload"]',
     position: 'top',
     icon: <Image className="w-6 h-6 text-orange-500" />,
-    tip: '描述越详细，图片放置越准确',
+    tip: '专业的图片管理确保AI按您的要求使用图片',
+  },
+  {
+    id: 'image-config',
+    title: '图片配置详解',
+    description: '上传图片后，您可以为每张图片设置详细的使用配置，确保AI准确理解您的意图。',
+    position: 'center',
+    icon: <Layers className="w-6 h-6 text-indigo-500" />,
+    tip: '配置越详细，图片使用越准确',
+    details: [
+      '使用方式：必须使用 / 建议使用 / AI自行决定',
+      '图片用途：封面/封底、内容配图、数据图表、Logo/品牌、背景图片',
+      '详细描述：说明图片的具体用途和放置位置',
+    ],
   },
   {
     id: 'generate',
@@ -67,14 +108,24 @@ const tourSteps: TourStep[] = [
     position: 'top',
     icon: <Zap className="w-6 h-6 text-amber-500" />,
     tip: 'AI会尽量自主完成，只在必要时询问您',
+    details: [
+      '自动搜索：AI会搜索相关资料补充内容',
+      '智能配图：AI会为每页选择合适的配图',
+      '实时进度：您可以在任务详情页查看生成进度',
+    ],
   },
   {
     id: 'complete',
     title: '恭喜！您已完成教程',
-    description: '现在您已经了解了TapiPowerPoint的基本使用流程。开始创建您的第一个专业PPT吧！如有问题，可随时重新查看本教程。',
+    description: '现在您已经了解了TapiPowerPoint的完整使用流程。开始创建您的第一个专业PPT吧！',
     position: 'center',
     icon: <CheckCircle className="w-8 h-8 text-green-500" />,
     tip: '点击侧边栏的"新手引导"可随时重新查看',
+    details: [
+      '任务列表：查看所有创建的PPT任务',
+      '设计规范：管理您的设计规范',
+      '专业模板：浏览和使用专业模板',
+    ],
   },
 ];
 
@@ -152,8 +203,8 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
     }
 
     const padding = 16;
-    const tooltipWidth = 400;
-    const tooltipHeight = 280;
+    const tooltipWidth = 420;
+    const tooltipHeight = 360;
 
     let top = 0;
     let left = 0;
@@ -216,7 +267,7 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
 
       {/* 提示框 */}
       <Card 
-        className="w-[400px] shadow-2xl border-0 overflow-hidden"
+        className="w-[420px] shadow-2xl border-0 overflow-hidden max-h-[90vh] overflow-y-auto"
         style={getTooltipStyle()}
       >
         {/* 顶部装饰条 */}
@@ -250,6 +301,21 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
           <p className="text-sm text-muted-foreground leading-relaxed">
             {step.description}
           </p>
+
+          {/* 详细说明列表 */}
+          {step.details && step.details.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-medium text-gray-700">详细说明：</p>
+              <ul className="space-y-1.5">
+                {step.details.map((detail, index) => (
+                  <li key={index} className="flex items-start gap-2 text-xs text-gray-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
+                    {detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {step.tip && (
             <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
