@@ -1,0 +1,930 @@
+import DashboardLayout from "@/components/DashboardLayout";
+import { LiveCanvas, ContentBlock } from "@/components/LiveCanvas";
+import { RealProgressBar } from "@/components/RealProgressBar";
+import { PPTPreview } from "@/components/PPTPreview";
+import { SlidePreviewCanvas, SlideContent } from "@/components/SlidePreviewCanvas";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { trpc } from "@/lib/trpc";
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Download,
+  Eye,
+  FileText,
+  HelpCircle,
+  Image as ImageIcon,
+  Layout,
+  Loader2,
+  MessageSquare,
+  Presentation,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useLocation, useParams } from "wouter";
+import { toast } from "sonner";
+
+const statusConfig: Record<string, { label: string; icon: React.ReactNode; className: string }> = {
+  pending: { label: "等待中", icon: <Clock className="w-4 h-4" />, className: "status-pending" },
+  uploading: { label: "上传中", icon: <Loader2 className="w-4 h-4 animate-spin" />, className: "status-uploading" },
+  running: { label: "生成中", icon: <RefreshCw className="w-4 h-4 animate-spin" />, className: "status-running" },
+  ask: { label: "需确认", icon: <HelpCircle className="w-4 h-4" />, className: "status-ask" },
+  completed: { label: "已完成", icon: <CheckCircle2 className="w-4 h-4" />, className: "status-completed" },
+  failed: { label: "失败", icon: <AlertCircle className="w-4 h-4" />, className: "status-failed" },
+};
+
+interface TimelineEvent {
+  time: string;
+  event: string;
+  status: string;
+}
+
+interface InteractionOption {
+  id: string;
+  label: string;
+  description?: string;
+  imageUrl?: string;
+}
+
+interface InteractionContent {
+  type: 'choice' | 'text' | 'image_selection' | 'confirmation';
+  title?: string;
+  content?: string;
+  options?: InteractionOption[];
+  images?: Array<{ url: string; label?: string }>;
+  placeholder?: string;
+}
+
+// Parse API output to content blocks for LiveCanvas
+function parseOutputToBlocks(output: any[]): ContentBlock[] {
+  if (!output || !Array.isArray(output)) return [];
+  
+  const blocks: ContentBlock[] = [];
+  
+  output.forEach((message, msgIndex) => {
+    if (!message.content || !Array.isArray(message.content)) return;
+    
+    message.content.forEach((item: any, itemIndex: number) => {
+      const blockId = `${msgIndex}-${itemIndex}`;
+      
+      if (item.type === 'output_text' && item.text) {
+        const text = item.text;
+        
+        // Check for slide content
+        if (text.includes('## ') || text.includes('### ') || text.includes('幻灯片')) {
+          blocks.push({
+            id: `slide-${blockId}`,
+            type: 'slide',
+            title: extractTitle(text),
+            content: text,
+            status: 'completed',
+            timestamp: new Date(),
+          });
+        } 
+        // Check for thinking/analysis
+        else if (text.includes('分析') || text.includes('思考') || text.includes('规划')) {
+          blocks.push({
+            id: `thinking-${blockId}`,
+            type: 'thinking',
+            title: '分析与规划',
+            content: text,
+            status: 'completed',
+            timestamp: new Date(),
+          });
+        }
+        // Check for action/operation
+        else if (text.includes('正在') || text.includes('开始') || text.includes('执行')) {
+          blocks.push({
+            id: `action-${blockId}`,
+            type: 'action',
+            title: '执行操作',
+            content: text,
+            status: 'completed',
+            timestamp: new Date(),
+          });
+        }
+        // Default to content block
+        else if (text.trim().length > 0) {
+          blocks.push({
+            id: `content-${blockId}`,
+            type: 'content',
+            title: '内容生成',
+            content: text,
+            status: 'completed',
+            timestamp: new Date(),
+          });
+        }
+      }
+      
+      // Handle file outputs
+      if (item.fileUrl && item.fileName) {
+        const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(item.fileName);
+        blocks.push({
+          id: `file-${blockId}`,
+          type: isImage ? 'image' : 'result',
+          title: item.fileName,
+          content: isImage ? '已生成图片' : '已生成文件',
+          status: 'completed',
+          timestamp: new Date(),
+          metadata: {
+            imageUrl: isImage ? item.fileUrl : undefined,
+            fileName: item.fileName,
+          },
+        });
+      }
+    });
+  });
+  
+  return blocks;
+}
+
+// Parse API output to slide content for SlidePreviewCanvas
+function parseOutputToSlides(output: any[]): SlideContent[] {
+  if (!output || !Array.isArray(output)) return [];
+  
+  const slides: SlideContent[] = [];
+  let slideNumber = 0;
+  
+  output.forEach((message, msgIndex) => {
+    if (!message.content || !Array.isArray(message.content)) return;
+    
+    message.content.forEach((item: any, itemIndex: number) => {
+      if (item.type === 'output_text' && item.text) {
+        const text = item.text;
+        
+        // Look for slide markers in the text
+        const slideMatches = text.match(/(?:##|###)\s*(?:第\s*\d+\s*页|幻灯片\s*\d+|Slide\s*\d+|封面|目录|总结|结论)/gi);
+        
+        if (slideMatches || text.includes('## ') || text.includes('### ')) {
+          // Parse sections as slides
+          const sections = text.split(/(?=##\s)/);
+          
+          sections.forEach((section: string) => {
+            if (section.trim().length < 10) return;
+            
+            slideNumber++;
+            const title = extractTitle(section);
+            const type = determineSlideType(title, section, slideNumber);
+            
+            slides.push({
+              id: `slide-${msgIndex}-${itemIndex}-${slideNumber}`,
+              slideNumber,
+              title: title || `第 ${slideNumber} 页`,
+              content: section.replace(/^##?\s*[^\n]+\n/, '').trim(),
+              type,
+              status: 'completed',
+            });
+          });
+        }
+      }
+      
+      // Handle image outputs - attach to last slide
+      if (item.fileUrl && item.fileName) {
+        const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(item.fileName);
+        if (isImage && slides.length > 0) {
+          slides[slides.length - 1].imageUrl = item.fileUrl;
+        }
+      }
+    });
+  });
+  
+  return slides;
+}
+
+function extractTitle(text: string): string {
+  const match = text.match(/^##?\s*(.+)$/m);
+  return match ? match[1].trim() : '内容';
+}
+
+function determineSlideType(title: string, content: string, slideNumber: number): SlideContent['type'] {
+  const lowerTitle = title.toLowerCase();
+  const lowerContent = content.toLowerCase();
+  
+  if (slideNumber === 1 || lowerTitle.includes('封面') || lowerTitle.includes('cover')) {
+    return 'cover';
+  }
+  if (lowerTitle.includes('目录') || lowerTitle.includes('contents') || lowerTitle.includes('agenda')) {
+    return 'toc';
+  }
+  if (lowerTitle.includes('总结') || lowerTitle.includes('结论') || lowerTitle.includes('summary') || lowerTitle.includes('conclusion')) {
+    return 'summary';
+  }
+  if (lowerTitle.includes('数据') || lowerContent.includes('图表') || lowerContent.includes('chart') || lowerContent.includes('%')) {
+    return 'data';
+  }
+  if (lowerTitle.includes('过渡') || lowerTitle.includes('章节')) {
+    return 'divider';
+  }
+  return 'content';
+}
+
+export default function TaskDetail() {
+  const params = useParams<{ taskId: string }>();
+  const taskId = parseInt(params.taskId || "0");
+  const [, setLocation] = useLocation();
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [textResponse, setTextResponse] = useState("");
+  const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([]);
+  const [slideContents, setSlideContents] = useState<SlideContent[]>([]);
+  const [activeTab, setActiveTab] = useState<'process' | 'slides' | 'preview'>('process');
+  const lastOutputRef = useRef<string>("");
+
+  const { data: task, isLoading, refetch } = trpc.task.get.useQuery(
+    { id: taskId },
+    { enabled: taskId > 0 }
+  );
+
+  const pollMutation = trpc.task.poll.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      // Update content blocks and slides from real API output
+      if (data?.outputContent) {
+        try {
+          const output = JSON.parse(data.outputContent);
+          if (Array.isArray(output)) {
+            const blocks = parseOutputToBlocks(output);
+            const slides = parseOutputToSlides(output);
+            if (blocks.length > 0) {
+              setContentBlocks(blocks);
+            }
+            if (slides.length > 0) {
+              setSlideContents(slides);
+              // Auto-switch to slides tab when slides are available
+              if (activeTab === 'process' && slides.length >= 2) {
+                setActiveTab('slides');
+              }
+            }
+          }
+        } catch (e) {
+          // If not JSON, parse as text
+          updateContentBlocksFromText(data.outputContent);
+        }
+      }
+    },
+  });
+
+  const continueMutation = trpc.task.continue.useMutation({
+    onSuccess: () => {
+      toast.success("已提交，继续处理中...");
+      setSelectedOption(null);
+      setTextResponse("");
+      refetch();
+    },
+    onError: () => {
+      toast.error("提交失败，请重试");
+    },
+  });
+
+  const retryMutation = trpc.task.retry.useMutation({
+    onSuccess: () => {
+      toast.success("正在重试任务，已保留原有配置和文件...");
+      setContentBlocks([]);
+      setSlideContents([]);
+      setActiveTab('process');
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`重试失败: ${error.message || "请稍后再试"}`);
+    },
+  });
+
+  // Parse text output to content blocks (fallback)
+  const updateContentBlocksFromText = useCallback((output: string | null | undefined) => {
+    if (!output || output === lastOutputRef.current) return;
+    lastOutputRef.current = output;
+
+    const lines = output.split('\n');
+    const newBlocks: ContentBlock[] = [];
+    let currentBlock: Partial<ContentBlock> | null = null;
+
+    lines.forEach((line, index) => {
+      if (line.startsWith('## ') || line.startsWith('### ')) {
+        if (currentBlock) {
+          newBlocks.push(currentBlock as ContentBlock);
+        }
+        currentBlock = {
+          id: `block-${index}`,
+          type: 'slide',
+          title: line.replace(/^#+\s*/, ''),
+          content: '',
+          status: 'completed',
+          timestamp: new Date(),
+        };
+      } else if (line.includes('正在分析') || line.includes('分析中')) {
+        if (currentBlock) {
+          newBlocks.push(currentBlock as ContentBlock);
+        }
+        currentBlock = {
+          id: `block-${index}`,
+          type: 'thinking',
+          title: '分析文档',
+          content: line,
+          status: 'completed',
+          timestamp: new Date(),
+        };
+      } else if (line.includes('生成') || line.includes('创建')) {
+        if (currentBlock) {
+          newBlocks.push(currentBlock as ContentBlock);
+        }
+        currentBlock = {
+          id: `block-${index}`,
+          type: 'content',
+          title: '生成内容',
+          content: line,
+          status: 'completed',
+          timestamp: new Date(),
+        };
+      } else if (currentBlock) {
+        currentBlock.content = (currentBlock.content || '') + '\n' + line;
+      }
+    });
+
+    if (currentBlock) {
+      newBlocks.push(currentBlock as ContentBlock);
+    }
+
+    if (newBlocks.length > 0) {
+      setContentBlocks(newBlocks);
+    }
+  }, []);
+
+  // Poll for updates when task is active
+  useEffect(() => {
+    if (!task) return;
+    
+    const isActive = ["uploading", "running"].includes(task.status);
+    if (!isActive) return;
+
+    // Initial content blocks update
+    if (task.outputContent) {
+      try {
+        const output = JSON.parse(task.outputContent);
+        if (Array.isArray(output)) {
+          const blocks = parseOutputToBlocks(output);
+          const slides = parseOutputToSlides(output);
+          if (blocks.length > 0) {
+            setContentBlocks(blocks);
+          }
+          if (slides.length > 0) {
+            setSlideContents(slides);
+          }
+        }
+      } catch (e) {
+        updateContentBlocksFromText(task.outputContent);
+      }
+    }
+
+    const interval = setInterval(() => {
+      pollMutation.mutate({ taskId });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [task?.status, taskId, updateContentBlocksFromText]);
+
+  // Switch to preview tab when completed
+  useEffect(() => {
+    if (task?.status === 'completed' && task.resultPptxUrl) {
+      setActiveTab('preview');
+    }
+  }, [task?.status, task?.resultPptxUrl]);
+
+  const formatDate = (date: Date | string) => {
+    const d = new Date(date);
+    return d.toLocaleDateString("zh-CN", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: 'oklch(0.75 0.12 85)' }} />
+            <p className="text-muted-foreground">加载任务详情...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!task) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-4xl mx-auto text-center py-20 animate-fade-in">
+          <AlertCircle className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">任务不存在</h2>
+          <p className="text-muted-foreground mb-6">该任务可能已被删除</p>
+          <Button onClick={() => setLocation("/tasks")} variant="outline">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            返回任务列表
+          </Button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const status = statusConfig[task.status] || statusConfig.pending;
+  const isActive = ["uploading", "running"].includes(task.status);
+  const isCompleted = task.status === "completed";
+  const isFailed = task.status === "failed";
+  const needsInteraction = task.status === "ask";
+  const timelineEvents: TimelineEvent[] = JSON.parse(task.timelineEvents || "[]");
+
+  // Parse interaction data from real API
+  let interactionContent: InteractionContent | null = null;
+  if (needsInteraction && task.interactionData) {
+    try {
+      const rawData = JSON.parse(task.interactionData);
+      // Parse from API output format
+      if (Array.isArray(rawData)) {
+        const lastMessage = rawData[rawData.length - 1];
+        if (lastMessage?.content) {
+          const textContent = lastMessage.content.find((c: any) => c.type === 'output_text');
+          if (textContent?.text) {
+            interactionContent = {
+              type: 'text',
+              title: '需要您的确认',
+              content: textContent.text,
+            };
+          }
+        }
+      } else {
+        interactionContent = rawData;
+      }
+    } catch {
+      interactionContent = {
+        type: 'text',
+        title: '需要您的输入',
+        content: task.interactionData,
+      };
+    }
+  }
+
+  const handleContinue = (response: string) => {
+    continueMutation.mutate({ taskId, userResponse: response });
+  };
+
+  const handleSubmitResponse = () => {
+    if (interactionContent?.type === 'text' && textResponse.trim()) {
+      handleContinue(textResponse.trim());
+    } else if (selectedOption) {
+      handleContinue(selectedOption);
+    }
+  };
+
+  const handleRetry = () => {
+    retryMutation.mutate({ taskId });
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="max-w-5xl mx-auto animate-fade-in">
+        {/* Back Link */}
+        <button
+          onClick={() => setLocation("/tasks")}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          返回任务列表
+        </button>
+
+        {/* Header */}
+        <Card className="mb-6 pro-card border-0 shadow-pro overflow-hidden">
+          <div className="h-1 gradient-gold" />
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 gradient-navy shadow-pro">
+                  <FileText className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-foreground">{task.title}</h1>
+                  <div className="flex items-center gap-3 mt-2">
+                    {task.project && (
+                      <div className="flex items-center gap-1.5">
+                        <div
+                          className="w-2.5 h-2.5 rounded-full border"
+                          style={{ backgroundColor: task.project.primaryColor }}
+                        />
+                        <span className="text-sm text-muted-foreground">{task.project.name}</span>
+                      </div>
+                    )}
+                    <span className="text-border">•</span>
+                    <span className="text-sm text-muted-foreground">{formatDate(task.createdAt)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <Badge className={`${status.className} flex items-center gap-1.5 px-4 py-2`}>
+                {status.icon}
+                {status.label}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Progress Section - Real Progress Bar */}
+            {(isActive || needsInteraction) && (
+              <Card className="pro-card border-0 shadow-pro overflow-hidden">
+                <div className="h-1 gradient-gold" />
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center gradient-gold">
+                      <Sparkles className="w-4 h-4 text-white" />
+                    </div>
+                    生成进度
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RealProgressBar
+                    backendProgress={task.progress}
+                    currentStep={task.currentStep}
+                    status={task.status as any}
+                    showStages={true}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Tabs for Process/Slides/Preview */}
+            {(isCompleted || contentBlocks.length > 0 || slideContents.length > 0) && (
+              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="process" className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    生成过程
+                  </TabsTrigger>
+                  <TabsTrigger value="slides" className="flex items-center gap-2" disabled={slideContents.length === 0 && !isActive}>
+                    <Layout className="w-4 h-4" />
+                    幻灯片预览
+                    {slideContents.length > 0 && (
+                      <Badge variant="secondary" className="text-xs ml-1">
+                        {slideContents.length}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="preview" className="flex items-center gap-2" disabled={!isCompleted}>
+                    <Presentation className="w-4 h-4" />
+                    成片预览
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="process" className="mt-4">
+                  <LiveCanvas
+                    blocks={contentBlocks}
+                    isStreaming={isActive}
+                    currentStep={task.currentStep}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="slides" className="mt-4">
+                  <SlidePreviewCanvas
+                    slides={slideContents}
+                    isGenerating={isActive}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="preview" className="mt-4">
+                  {isCompleted && task.resultPptxUrl ? (
+                    <PPTPreview
+                      pptxUrl={task.resultPptxUrl}
+                      pdfUrl={task.resultPdfUrl}
+                      shareUrl={task.shareUrl}
+                      title={task.title}
+                    />
+                  ) : (
+                    <Card className="pro-card border-0 shadow-pro">
+                      <CardContent className="p-8 text-center">
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-muted-foreground">PPT 生成完成后可预览</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+              </Tabs>
+            )}
+
+            {/* Live Canvas for active tasks without tabs */}
+            {isActive && contentBlocks.length === 0 && slideContents.length === 0 && (
+              <LiveCanvas
+                blocks={contentBlocks}
+                isStreaming={isActive}
+                currentStep={task.currentStep}
+              />
+            )}
+
+            {/* Interaction Section */}
+            {needsInteraction && interactionContent && (
+              <Card className="border-2 shadow-pro overflow-hidden" style={{ borderColor: 'oklch(0.85 0.08 85)', background: 'oklch(0.98 0.01 85)' }}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2" style={{ color: 'oklch(0.35 0.08 85)' }}>
+                    <MessageSquare className="w-5 h-5" />
+                    {interactionContent.title || "需要您的确认"}
+                  </CardTitle>
+                  {interactionContent.content && (
+                    <CardDescription className="text-base whitespace-pre-wrap" style={{ color: 'oklch(0.45 0.05 85)' }}>
+                      {interactionContent.content}
+                    </CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {/* Choice Options */}
+                  {interactionContent.type === 'choice' && interactionContent.options && (
+                    <div className="space-y-3 mb-6">
+                      {interactionContent.options.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setSelectedOption(option.id)}
+                          className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                            selectedOption === option.id
+                              ? "border-primary bg-accent shadow-pro-sm"
+                              : "border-border bg-card hover:border-muted-foreground/30 hover:shadow-pro-sm"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 ${
+                              selectedOption === option.id ? "border-primary" : "border-muted-foreground/30"
+                            }`}>
+                              {selectedOption === option.id && (
+                                <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-foreground">{option.label}</p>
+                              {option.description && (
+                                <p className="text-sm text-muted-foreground mt-1">{option.description}</p>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Image Selection */}
+                  {interactionContent.type === 'image_selection' && interactionContent.images && (
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      {interactionContent.images.map((img, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => setSelectedOption(img.url)}
+                          className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+                            selectedOption === img.url
+                              ? "border-primary ring-2 ring-primary/20"
+                              : "border-border hover:border-muted-foreground/30"
+                          }`}
+                        >
+                          <img
+                            src={img.url}
+                            alt={img.label || `选项 ${index + 1}`}
+                            className="w-full aspect-video object-cover"
+                          />
+                          {img.label && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                              <p className="text-white text-sm font-medium">{img.label}</p>
+                            </div>
+                          )}
+                          {selectedOption === img.url && (
+                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                              <CheckCircle2 className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Text Input */}
+                  {interactionContent.type === 'text' && (
+                    <Textarea
+                      placeholder={interactionContent.placeholder || "请输入您的回复..."}
+                      value={textResponse}
+                      onChange={(e) => setTextResponse(e.target.value)}
+                      className="mb-6 min-h-[120px]"
+                    />
+                  )}
+
+                  {/* Submit Button */}
+                  <Button
+                    onClick={handleSubmitResponse}
+                    disabled={
+                      continueMutation.isPending ||
+                      (interactionContent.type === 'text' ? !textResponse.trim() : !selectedOption)
+                    }
+                    className="w-full h-12 btn-pro-gold"
+                  >
+                    {continueMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        提交中...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        确认并继续
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Completed Section */}
+            {isCompleted && (
+              <Card className="pro-card border-0 shadow-pro overflow-hidden">
+                <div className="h-1 bg-green-500" />
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-green-700">
+                    <CheckCircle2 className="w-5 h-5" />
+                    生成完成
+                  </CardTitle>
+                  <CardDescription>
+                    您的PPT已成功生成，可以下载或在上方预览
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-3">
+                    {task.resultPptxUrl && (
+                      <Button asChild className="btn-pro-gold">
+                        <a href={task.resultPptxUrl} download={`${task.title}.pptx`}>
+                          <Download className="w-4 h-4 mr-2" />
+                          下载 PPTX
+                        </a>
+                      </Button>
+                    )}
+                    {task.resultPdfUrl && (
+                      <Button variant="outline" asChild>
+                        <a href={task.resultPdfUrl} download={`${task.title}.pdf`}>
+                          <Download className="w-4 h-4 mr-2" />
+                          下载 PDF
+                        </a>
+                      </Button>
+                    )}
+                    {task.shareUrl && (
+                      <Button variant="outline" asChild>
+                        <a href={task.shareUrl} target="_blank" rel="noopener noreferrer">
+                          <Eye className="w-4 h-4 mr-2" />
+                          在线查看
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Failed Section with Retry */}
+            {isFailed && (
+              <Card className="pro-card border-0 shadow-pro overflow-hidden">
+                <div className="h-1 bg-red-500" />
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-red-700">
+                    <AlertCircle className="w-5 h-5" />
+                    生成失败
+                  </CardTitle>
+                  <CardDescription>
+                    {task.errorMessage || "生成过程中发生错误"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                    <p className="text-sm text-red-700">
+                      <strong>错误信息：</strong>{task.errorMessage || "未知错误"}
+                    </p>
+                    <p className="text-sm text-red-600 mt-2">
+                      点击下方按钮可一键重试，系统将自动保留您之前的配置和上传的文件。
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={handleRetry} 
+                    disabled={retryMutation.isPending}
+                    className="btn-pro-gold"
+                  >
+                    {retryMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        重试中...
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        一键重试（保留配置）
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Task Info */}
+            <Card className="pro-card border-0 shadow-pro">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground">任务信息</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {task.sourceFileName && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">源文档</p>
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium truncate">{task.sourceFileName}</span>
+                    </div>
+                  </div>
+                )}
+                
+                {task.imageAttachments && JSON.parse(task.imageAttachments).length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">配图数量</p>
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">
+                        {JSON.parse(task.imageAttachments).length} 张
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {task.project && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">设计规范</p>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded border"
+                        style={{ backgroundColor: task.project.primaryColor }}
+                      />
+                      <span className="text-sm font-medium">{task.project.name}</span>
+                    </div>
+                  </div>
+                )}
+
+                {slideContents.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">已生成幻灯片</p>
+                    <div className="flex items-center gap-2">
+                      <Layout className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">{slideContents.length} 页</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Timeline */}
+            {timelineEvents.length > 0 && (
+              <Card className="pro-card border-0 shadow-pro">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">时间线</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-3">
+                      {timelineEvents.map((event, index) => (
+                        <div key={index} className="flex items-start gap-3">
+                          <div className={`w-2 h-2 rounded-full mt-1.5 ${
+                            event.status === 'completed' ? 'bg-green-500' :
+                            event.status === 'failed' ? 'bg-red-500' :
+                            event.status === 'running' ? 'bg-blue-500' :
+                            'bg-gray-300'
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground">{event.event}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(event.time).toLocaleTimeString('zh-CN')}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
