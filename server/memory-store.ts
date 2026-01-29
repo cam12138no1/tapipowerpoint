@@ -31,6 +31,7 @@ export function memoryUpsertUser(user: InsertUser): any {
       role: user.role || 'user',
       lastSignedIn: new Date(),
       createdAt: new Date(),
+      updatedAt: new Date(),
     };
     memoryStore.users.set(user.openId, newUser);
     return newUser;
@@ -53,10 +54,16 @@ export function memoryGetOrCreateUser(openId: string, name?: string): any {
       role: 'user',
       lastSignedIn: new Date(),
       createdAt: new Date(),
+      updatedAt: new Date(),
     };
     memoryStore.users.set(openId, user);
   }
   return user;
+}
+
+export function memoryGetAllUsers(): any[] {
+  return Array.from(memoryStore.users.values())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 // ============ Project Operations ============
@@ -67,9 +74,14 @@ export function memoryCreateProject(data: InsertProject): Project {
     id,
     userId: data.userId,
     name: data.name,
-    templateId: data.templateId || null,
+    engineProjectId: data.engineProjectId || null,
     designSpec: data.designSpec || null,
-    customRequirements: data.customRequirements || null,
+    primaryColor: data.primaryColor || '#0c87eb',
+    secondaryColor: data.secondaryColor || '#737373',
+    accentColor: data.accentColor || '#10b981',
+    fontFamily: data.fontFamily || '微软雅黑',
+    logoUrl: data.logoUrl || null,
+    logoFileKey: data.logoFileKey || null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -109,15 +121,21 @@ export function memoryCreatePptTask(data: InsertPptTask): PptTask {
     userId: data.userId,
     projectId: data.projectId,
     title: data.title,
+    engineTaskId: data.engineTaskId || null,
     status: data.status || 'pending',
-    agentTaskId: data.agentTaskId || null,
-    sourceFileId: data.sourceFileId || null,
+    currentStep: data.currentStep || null,
+    progress: data.progress || 0,
     sourceFileName: data.sourceFileName || null,
+    sourceFileId: data.sourceFileId || null,
+    sourceFileUrl: data.sourceFileUrl || null,
+    proposalContent: data.proposalContent || null,
     imageAttachments: data.imageAttachments || '[]',
-    outputFileUrl: data.outputFileUrl || null,
-    outputFileName: data.outputFileName || null,
-    shareUrl: data.shareUrl || null,
+    interactionData: data.interactionData || null,
     outputContent: data.outputContent || null,
+    shareUrl: data.shareUrl || null,
+    resultPptxUrl: data.resultPptxUrl || null,
+    resultPdfUrl: data.resultPdfUrl || null,
+    resultFileKey: data.resultFileKey || null,
     errorMessage: data.errorMessage || null,
     timelineEvents: data.timelineEvents || JSON.stringify([
       { time: new Date().toISOString(), event: '任务已创建', status: 'completed' },
@@ -143,7 +161,7 @@ export function memoryGetPptTaskWithProject(taskId: number): any | undefined {
   const task = memoryStore.pptTasks.get(taskId);
   if (!task) return undefined;
   
-  const project = memoryStore.projects.get(task.projectId);
+  const project = task.projectId ? memoryStore.projects.get(task.projectId) : null;
   return { ...task, project };
 }
 
