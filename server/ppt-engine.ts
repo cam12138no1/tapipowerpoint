@@ -92,7 +92,7 @@ class PPTEngineClient {
   constructor() {
     // Use environment variables for API configuration
     const apiKey = process.env.PPT_ENGINE_API_KEY;
-    const baseURL = process.env.PPT_ENGINE_API_URL || 'https://api.pptmaster.ai/v1';
+    const baseURL = process.env.PPT_ENGINE_API_URL || 'https://api.manus.im/v1';
 
     if (!apiKey) {
       console.warn('[PPTEngine] API key is not configured. API calls will fail.');

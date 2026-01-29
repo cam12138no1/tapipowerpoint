@@ -14,7 +14,7 @@
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `PPT_ENGINE_API_URL` | PPT 生成引擎 API 地址 | `https://api.pptmaster.ai/v1` |
+| `PPT_ENGINE_API_URL` | PPT 生成引擎 API 地址 | `https://api.manus.im/v1` |
 | `PORT` | 服务器监听端口 | `3000` |
 | `NODE_ENV` | Node 运行环境 | `production` |
 
@@ -40,7 +40,7 @@ PPT_ENGINE_API_KEY=sk-your-api-key
 # 可选配置
 PORT=3000
 NODE_ENV=production
-PPT_ENGINE_API_URL=https://api.pptmaster.ai/v1
+PPT_ENGINE_API_URL=https://api.manus.im/v1
 ```
 
 ### 方式二：Docker 环境变量

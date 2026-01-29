@@ -17,5 +17,5 @@ export const ENV = {
   
   // PPT Engine API
   pptEngineApiKey: process.env.PPT_ENGINE_API_KEY ?? "",
-  pptEngineApiUrl: process.env.PPT_ENGINE_API_URL ?? "https://api.manus.im/",
+  pptEngineApiUrl: process.env.PPT_ENGINE_API_URL ?? "https://api.manus.im/v1",
 };
