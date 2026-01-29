@@ -122,7 +122,7 @@ const taskRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       const taskWithProject = await db.getPptTaskWithProject(input.id);
-      if (!taskWithProject || taskWithProject.userId !== ctx.user.id) {
+      if (!taskWithProject || taskWithProject.task.userId !== ctx.user.id) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
       }
       return taskWithProject;
