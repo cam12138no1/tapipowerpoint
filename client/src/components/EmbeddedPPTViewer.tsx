@@ -52,7 +52,9 @@ export function EmbeddedPPTViewer({
   const [slides, setSlides] = useState<SlideData[]>(initialSlides || []);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoom, setZoom] = useState(100);
-  const [isLoading, setIsLoading] = useState(!initialSlides?.length);
+  // 只有在有slides数据但还没加载完成时才显示loading
+  // 如果没有slides数据，直接显示下载提示或PDF预览
+  const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState<'pptx' | 'pdf' | null>(null);
   
   // 编辑状态
@@ -63,13 +65,12 @@ export function EmbeddedPPTViewer({
   const [isSaving, setIsSaving] = useState(false);
   const [showRegeneratePanel, setShowRegeneratePanel] = useState(false);
 
-  // 如果没有slides数据，尝试从PDF生成预览
+  // 更新slides数据
   useEffect(() => {
-    if (!initialSlides?.length && pdfUrl) {
-      // 使用PDF作为预览源
-      setIsLoading(false);
+    if (initialSlides?.length) {
+      setSlides(initialSlides);
     }
-  }, [initialSlides, pdfUrl]);
+  }, [initialSlides]);
 
   const totalSlides = slides.length || 1;
 
