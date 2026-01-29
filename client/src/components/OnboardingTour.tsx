@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { X, ChevronLeft, ChevronRight, CheckCircle, Sparkles, Palette, FileText, Image, Zap, Settings, Layers } from "lucide-react";
@@ -138,49 +138,91 @@ interface OnboardingTourProps {
 export default function OnboardingTour({ isOpen, onClose, onComplete }: OnboardingTourProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   const step = tourSteps[currentStep];
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === tourSteps.length - 1;
 
-  // 更新高亮区域
+  // 更新高亮区域 - 增强版
   const updateHighlight = useCallback(() => {
     if (step.targetSelector) {
-      const element = document.querySelector(step.targetSelector);
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        setHighlightRect(rect);
-        // 滚动到目标元素
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else {
-        setHighlightRect(null);
-      }
+      // 使用 requestAnimationFrame 确保 DOM 已更新
+      requestAnimationFrame(() => {
+        const element = document.querySelector(step.targetSelector!);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          
+          // 验证元素是否可见
+          if (rect.width > 0 && rect.height > 0) {
+            setHighlightRect(rect);
+            
+            // 平滑滚动到目标元素，确保元素在视口中央
+            const elementTop = rect.top + window.scrollY;
+            const elementCenter = elementTop - window.innerHeight / 2 + rect.height / 2;
+            
+            window.scrollTo({
+              top: Math.max(0, elementCenter),
+              behavior: 'smooth'
+            });
+          } else {
+            console.warn(`元素 ${step.targetSelector} 尺寸为0，可能不可见`);
+            setHighlightRect(null);
+          }
+        } else {
+          console.warn(`未找到元素: ${step.targetSelector}`);
+          setHighlightRect(null);
+        }
+      });
     } else {
       setHighlightRect(null);
     }
   }, [step.targetSelector]);
 
+  // 监听步骤变化和窗口调整
   useEffect(() => {
     if (isOpen) {
-      updateHighlight();
-      // 监听窗口大小变化
-      window.addEventListener('resize', updateHighlight);
-      return () => window.removeEventListener('resize', updateHighlight);
+      // 延迟执行以确保页面渲染完成
+      const timer = setTimeout(() => {
+        updateHighlight();
+      }, 150);
+      
+      // 监听窗口大小变化和滚动
+      const handleResize = () => {
+        updateHighlight();
+      };
+      
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('scroll', handleResize);
+      
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('resize', handleResize);
+        window.removeEventListener('scroll', handleResize);
+      };
     }
   }, [isOpen, currentStep, updateHighlight]);
+
+  // 步骤切换时添加动画
+  const handleStepChange = useCallback((newStep: number) => {
+    setIsAnimating(true);
+    setCurrentStep(newStep);
+    setTimeout(() => setIsAnimating(false), 300);
+  }, []);
 
   const handleNext = () => {
     if (isLastStep) {
       onComplete();
       onClose();
     } else {
-      setCurrentStep(prev => prev + 1);
+      handleStepChange(currentStep + 1);
     }
   };
 
   const handlePrev = () => {
     if (!isFirstStep) {
-      setCurrentStep(prev => prev - 1);
+      handleStepChange(currentStep - 1);
     }
   };
 
@@ -188,9 +230,14 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
     onClose();
   };
 
+  // 点击进度点跳转
+  const handleDotClick = (index: number) => {
+    handleStepChange(index);
+  };
+
   if (!isOpen) return null;
 
-  // 计算提示框位置
+  // 计算提示框位置 - 优化版
   const getTooltipStyle = (): React.CSSProperties => {
     if (step.position === 'center' || !highlightRect) {
       return {
@@ -202,9 +249,9 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
       };
     }
 
-    const padding = 16;
+    const padding = 20;
     const tooltipWidth = 420;
-    const tooltipHeight = 360;
+    const tooltipHeight = 400; // 增加高度估计
 
     let top = 0;
     let left = 0;
@@ -216,19 +263,31 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
         break;
       case 'top':
         top = highlightRect.top - tooltipHeight - padding;
+        // 如果顶部空间不足，改为底部显示
+        if (top < padding) {
+          top = highlightRect.bottom + padding;
+        }
         left = highlightRect.left + highlightRect.width / 2 - tooltipWidth / 2;
         break;
       case 'left':
         top = highlightRect.top + highlightRect.height / 2 - tooltipHeight / 2;
         left = highlightRect.left - tooltipWidth - padding;
+        // 如果左侧空间不足，改为右侧显示
+        if (left < padding) {
+          left = highlightRect.right + padding;
+        }
         break;
       case 'right':
         top = highlightRect.top + highlightRect.height / 2 - tooltipHeight / 2;
         left = highlightRect.right + padding;
+        // 如果右侧空间不足，改为左侧显示
+        if (left + tooltipWidth > window.innerWidth - padding) {
+          left = highlightRect.left - tooltipWidth - padding;
+        }
         break;
     }
 
-    // 确保不超出屏幕
+    // 确保不超出屏幕边界
     left = Math.max(padding, Math.min(left, window.innerWidth - tooltipWidth - padding));
     top = Math.max(padding, Math.min(top, window.innerHeight - tooltipHeight - padding));
 
@@ -237,37 +296,46 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
       top: `${top}px`,
       left: `${left}px`,
       zIndex: 10001,
+      transition: 'top 0.3s ease, left 0.3s ease',
     };
   };
 
   return (
     <>
-      {/* 遮罩层 */}
+      {/* 遮罩层 - 点击可关闭 */}
       <div 
         className="fixed inset-0 bg-black/60 z-[10000] transition-opacity duration-300"
         onClick={handleSkip}
+        style={{ backdropFilter: 'blur(2px)' }}
       />
 
-      {/* 高亮区域 */}
+      {/* 高亮区域 - 优化边框和动画 */}
       {highlightRect && (
         <div
-          className="fixed z-[10000] pointer-events-none"
+          className="fixed z-[10000] pointer-events-none transition-all duration-300 ease-out"
           style={{
-            top: highlightRect.top - 8,
-            left: highlightRect.left - 8,
-            width: highlightRect.width + 16,
-            height: highlightRect.height + 16,
+            top: highlightRect.top - 12,
+            left: highlightRect.left - 12,
+            width: highlightRect.width + 24,
+            height: highlightRect.height + 24,
             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
-            borderRadius: '12px',
+            borderRadius: '16px',
             border: '3px solid #f59e0b',
-            animation: 'pulse 2s infinite',
+            animation: 'highlight-pulse 2s infinite',
           }}
-        />
+        >
+          {/* 角标装饰 */}
+          <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-amber-400 rounded-tl-lg" />
+          <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-amber-400 rounded-tr-lg" />
+          <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-amber-400 rounded-bl-lg" />
+          <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-amber-400 rounded-br-lg" />
+        </div>
       )}
 
       {/* 提示框 */}
       <Card 
-        className="w-[420px] shadow-2xl border-0 overflow-hidden max-h-[90vh] overflow-y-auto"
+        ref={tooltipRef}
+        className={`w-[420px] shadow-2xl border-0 overflow-hidden max-h-[85vh] overflow-y-auto transition-all duration-300 ${isAnimating ? 'opacity-80 scale-95' : 'opacity-100 scale-100'}`}
         style={getTooltipStyle()}
       >
         {/* 顶部装饰条 */}
@@ -276,7 +344,7 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center shadow-sm">
                 {step.icon}
               </div>
               <div>
@@ -289,7 +357,7 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-gray-100 rounded-full"
               onClick={handleSkip}
             >
               <X className="w-4 h-4" />
@@ -304,13 +372,13 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
 
           {/* 详细说明列表 */}
           {step.details && step.details.length > 0 && (
-            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-              <p className="text-xs font-medium text-gray-700">详细说明：</p>
-              <ul className="space-y-1.5">
+            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-700">详细说明：</p>
+              <ul className="space-y-2">
                 {step.details.map((detail, index) => (
                   <li key={index} className="flex items-start gap-2 text-xs text-gray-600">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
-                    {detail}
+                    <span>{detail}</span>
                   </li>
                 ))}
               </ul>
@@ -318,24 +386,26 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
           )}
 
           {step.tip && (
-            <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
               <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600" />
-              <p className="text-xs text-amber-700">{step.tip}</p>
+              <p className="text-xs text-amber-700 font-medium">{step.tip}</p>
             </div>
           )}
 
-          {/* 进度指示器 */}
-          <div className="flex justify-center gap-1.5 pt-2">
+          {/* 进度指示器 - 可点击 */}
+          <div className="flex justify-center gap-2 pt-2">
             {tourSteps.map((_, index) => (
-              <div
+              <button
                 key={index}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
+                onClick={() => handleDotClick(index)}
+                className={`rounded-full transition-all duration-300 hover:scale-110 ${
                   index === currentStep
-                    ? 'w-6 bg-amber-500'
+                    ? 'w-8 h-2 bg-amber-500'
                     : index < currentStep
-                    ? 'w-1.5 bg-amber-300'
-                    : 'w-1.5 bg-gray-200'
+                    ? 'w-2 h-2 bg-amber-300 hover:bg-amber-400'
+                    : 'w-2 h-2 bg-gray-200 hover:bg-gray-300'
                 }`}
+                title={`跳转到步骤 ${index + 1}`}
               />
             ))}
           </div>
@@ -366,7 +436,7 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
               <Button
                 size="sm"
                 onClick={handleNext}
-                className="gap-1 bg-amber-500 hover:bg-amber-600 text-white"
+                className="gap-1 bg-amber-500 hover:bg-amber-600 text-white shadow-md"
               >
                 {isLastStep ? (
                   <>
@@ -387,14 +457,14 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
 
       {/* 动画样式 */}
       <style>{`
-        @keyframes pulse {
+        @keyframes highlight-pulse {
           0%, 100% {
             border-color: #f59e0b;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 20px rgba(245, 158, 11, 0.5);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 20px rgba(245, 158, 11, 0.4);
           }
           50% {
             border-color: #fbbf24;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 30px rgba(245, 158, 11, 0.8);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 35px rgba(245, 158, 11, 0.7);
           }
         }
       `}</style>
