@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { LiveCanvas, ContentBlock } from "@/components/LiveCanvas";
+import { UserInteractionPanel } from "@/components/UserInteractionPanel";
 import { RealProgressBar } from "@/components/RealProgressBar";
 import { PPTPreview } from "@/components/PPTPreview";
 import { SlidePreviewCanvas, SlideContent } from "@/components/SlidePreviewCanvas";
@@ -631,122 +632,14 @@ export default function TaskDetail() {
               />
             )}
 
-            {/* Interaction Section */}
-            {needsInteraction && interactionContent && (
-              <Card className="border-2 shadow-pro overflow-hidden" style={{ borderColor: 'oklch(0.85 0.08 85)', background: 'oklch(0.98 0.01 85)' }}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2" style={{ color: 'oklch(0.35 0.08 85)' }}>
-                    <MessageSquare className="w-5 h-5" />
-                    {interactionContent.title || "需要您的确认"}
-                  </CardTitle>
-                  {interactionContent.content && (
-                    <CardDescription className="text-base whitespace-pre-wrap" style={{ color: 'oklch(0.45 0.05 85)' }}>
-                      {interactionContent.content}
-                    </CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {/* Choice Options */}
-                  {interactionContent.type === 'choice' && interactionContent.options && (
-                    <div className="space-y-3 mb-6">
-                      {interactionContent.options.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setSelectedOption(option.id)}
-                          className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-                            selectedOption === option.id
-                              ? "border-primary bg-accent shadow-pro-sm"
-                              : "border-border bg-card hover:border-muted-foreground/30 hover:shadow-pro-sm"
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 ${
-                              selectedOption === option.id ? "border-primary" : "border-muted-foreground/30"
-                            }`}>
-                              {selectedOption === option.id && (
-                                <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-medium text-foreground">{option.label}</p>
-                              {option.description && (
-                                <p className="text-sm text-muted-foreground mt-1">{option.description}</p>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Image Selection */}
-                  {interactionContent.type === 'image_selection' && interactionContent.images && (
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                      {interactionContent.images.map((img, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => setSelectedOption(img.url)}
-                          className={`relative rounded-xl overflow-hidden border-2 transition-all ${
-                            selectedOption === img.url
-                              ? "border-primary ring-2 ring-primary/20"
-                              : "border-border hover:border-muted-foreground/30"
-                          }`}
-                        >
-                          <img
-                            src={img.url}
-                            alt={img.label || `选项 ${index + 1}`}
-                            className="w-full aspect-video object-cover"
-                          />
-                          {img.label && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                              <p className="text-white text-sm font-medium">{img.label}</p>
-                            </div>
-                          )}
-                          {selectedOption === img.url && (
-                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                              <CheckCircle2 className="w-4 h-4 text-white" />
-                            </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Text Input */}
-                  {interactionContent.type === 'text' && (
-                    <Textarea
-                      placeholder={interactionContent.placeholder || "请输入您的回复..."}
-                      value={textResponse}
-                      onChange={(e) => setTextResponse(e.target.value)}
-                      className="mb-6 min-h-[120px]"
-                    />
-                  )}
-
-                  {/* Submit Button */}
-                  <Button
-                    onClick={handleSubmitResponse}
-                    disabled={
-                      continueMutation.isPending ||
-                      (interactionContent.type === 'text' ? !textResponse.trim() : !selectedOption)
-                    }
-                    className="w-full h-12 btn-pro-gold"
-                  >
-                    {continueMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        提交中...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        确认并继续
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
+            {/* Interaction Section - Enhanced with UserInteractionPanel */}
+            {needsInteraction && (
+              <UserInteractionPanel
+                interactionData={task.interactionData}
+                outputContent={task.outputContent}
+                onSubmit={handleContinue}
+                isSubmitting={continueMutation.isPending}
+              />
             )}
 
             {/* Completed Section */}

@@ -1,15 +1,26 @@
 import { eq, desc, and } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleMysql } from "drizzle-orm/mysql2";
+import { Pool } from "pg";
 import { InsertUser, users, projects, pptTasks, InsertProject, InsertPptTask, Project, PptTask } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import * as memStore from './memory-store';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: any = null;
 let _dbInitialized = false;
+let _dbType: 'postgres' | 'mysql' | 'memory' = 'memory';
 
 // Check if we should use memory store
 function useMemoryStore(): boolean {
   return !process.env.DATABASE_URL;
+}
+
+// Detect database type from URL
+function detectDbType(url: string): 'postgres' | 'mysql' {
+  if (url.startsWith('postgresql://') || url.startsWith('postgres://')) {
+    return 'postgres';
+  }
+  return 'mysql';
 }
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
@@ -20,15 +31,28 @@ export async function getDb() {
   
   if (process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
-      console.log("[Database] Connected to MySQL database");
+      _dbType = detectDbType(process.env.DATABASE_URL);
+      
+      if (_dbType === 'postgres') {
+        const pool = new Pool({
+          connectionString: process.env.DATABASE_URL,
+          ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        });
+        _db = drizzlePg(pool);
+        console.log("[Database] Connected to PostgreSQL database");
+      } else {
+        _db = drizzleMysql(process.env.DATABASE_URL);
+        console.log("[Database] Connected to MySQL database");
+      }
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _dbType = 'memory';
     }
   } else {
     console.log("[Database] No DATABASE_URL configured, using in-memory storage");
     _db = null;
+    _dbType = 'memory';
   }
   return _db;
 }
@@ -90,9 +114,20 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    if (_dbType === 'postgres') {
+      // PostgreSQL upsert
+      const existing = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
+      if (existing.length > 0) {
+        await db.update(users).set(updateSet).where(eq(users.openId, user.openId));
+      } else {
+        await db.insert(users).values(values);
+      }
+    } else {
+      // MySQL upsert
+      await db.insert(users).values(values).onDuplicateKeyUpdate({
+        set: updateSet,
+      });
+    }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     // Fallback to memory store
@@ -133,13 +168,23 @@ export async function getOrCreateUser(openId: string, name?: string) {
   try {
     let [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
     if (!user) {
-      await db.insert(users).values({
-        openId,
-        name: name || openId,
-        loginMethod: 'simple',
-        lastSignedIn: new Date(),
-      });
-      [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+      if (_dbType === 'postgres') {
+        await db.insert(users).values({
+          openId,
+          name: name || openId,
+          loginMethod: 'simple',
+          lastSignedIn: new Date(),
+        }).returning();
+        [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+      } else {
+        await db.insert(users).values({
+          openId,
+          name: name || openId,
+          loginMethod: 'simple',
+          lastSignedIn: new Date(),
+        });
+        [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+      }
     }
     return user;
   } catch (error) {
@@ -161,11 +206,15 @@ export async function createProject(data: InsertProject): Promise<Project> {
   }
 
   try {
-    const result = await db.insert(projects).values(data);
-    const insertId = result[0].insertId;
-    
-    const [project] = await db.select().from(projects).where(eq(projects.id, insertId));
-    return project;
+    if (_dbType === 'postgres') {
+      const [project] = await db.insert(projects).values(data).returning();
+      return project;
+    } else {
+      const result = await db.insert(projects).values(data);
+      const insertId = result[0].insertId;
+      const [project] = await db.select().from(projects).where(eq(projects.id, insertId));
+      return project;
+    }
   } catch (error) {
     console.error("[Database] Failed to create project:", error);
     return memStore.memoryCreateProject(data);
@@ -271,11 +320,15 @@ export async function createPptTask(data: InsertPptTask): Promise<PptTask> {
       ]),
     };
 
-    const result = await db.insert(pptTasks).values(taskData);
-    const insertId = result[0].insertId;
-    
-    const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, insertId));
-    return task;
+    if (_dbType === 'postgres') {
+      const [task] = await db.insert(pptTasks).values(taskData).returning();
+      return task;
+    } else {
+      const result = await db.insert(pptTasks).values(taskData);
+      const insertId = result[0].insertId;
+      const [task] = await db.select().from(pptTasks).where(eq(pptTasks.id, insertId));
+      return task;
+    }
   } catch (error) {
     console.error("[Database] Failed to create task:", error);
     return memStore.memoryCreatePptTask(data);

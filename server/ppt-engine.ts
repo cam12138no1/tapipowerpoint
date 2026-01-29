@@ -142,12 +142,12 @@ class PPTEngineClient {
   async createTask(data: CreateTaskRequest): Promise<EngineTaskCreateResponse> {
     const requestBody = {
       prompt: data.prompt,
-      agentProfile: data.agentProfile || 'ppt-pro-max',
-      taskMode: data.taskMode || 'agent',
-      projectId: data.projectId,
+      agent_profile: data.agentProfile || 'manus-1.6-max',
+      task_mode: data.taskMode || 'agent',
+      project_id: data.projectId,
       attachments: data.attachments,
-      createShareableLink: data.createShareableLink ?? true,
-      interactiveMode: data.interactiveMode ?? true,
+      create_shareable_link: data.createShareableLink ?? true,
+      interactive_mode: data.interactiveMode ?? true,
     };
     
     console.log('[PPTEngine] Creating task...');
@@ -201,7 +201,7 @@ class PPTEngineClient {
   async continueTask(taskId: string, userInput: string): Promise<EngineTaskCreateResponse> {
     const response = await this.client.post('/tasks', {
       prompt: userInput,
-      taskId: taskId,
+      task_id: taskId,
     });
     return response.data;
   }

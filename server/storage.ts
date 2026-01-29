@@ -1,26 +1,110 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+// Storage helpers with Cloudflare R2 support and local fallback
+// Priority: R2 > Forge API > Local Storage
 
 import { ENV } from './_core/env';
+import { localStoragePut, localStorageGet, localStorageRead, localStorageExists } from './local-storage';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-type StorageConfig = { baseUrl: string; apiKey: string };
+// Storage provider type
+type StorageProvider = 'r2' | 'forge' | 'local';
 
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
+// Get the active storage provider
+function getStorageProvider(): StorageProvider {
+  // Check R2 configuration first
+  if (ENV.r2AccountId && ENV.r2AccessKeyId && ENV.r2SecretAccessKey && ENV.r2BucketName) {
+    return 'r2';
   }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
+  
+  // Check Forge API configuration
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+    return 'forge';
+  }
+  
+  // Fall back to local storage
+  return 'local';
 }
 
+// Create R2 client
+function createR2Client(): S3Client | null {
+  if (!ENV.r2AccountId || !ENV.r2AccessKeyId || !ENV.r2SecretAccessKey) {
+    return null;
+  }
+  
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${ENV.r2AccountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: ENV.r2AccessKeyId,
+      secretAccessKey: ENV.r2SecretAccessKey,
+    },
+  });
+}
+
+// R2 storage functions
+async function r2Put(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType: string
+): Promise<{ key: string; url: string }> {
+  const client = createR2Client();
+  if (!client) {
+    throw new Error('R2 client not configured');
+  }
+  
+  const key = relKey.replace(/^\/+/, '');
+  const body = typeof data === 'string' ? Buffer.from(data) : data;
+  
+  await client.send(new PutObjectCommand({
+    Bucket: ENV.r2BucketName,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  }));
+  
+  // Return public URL if configured, otherwise generate signed URL
+  let url: string;
+  if (ENV.r2PublicUrl) {
+    url = `${ENV.r2PublicUrl.replace(/\/+$/, '')}/${key}`;
+  } else {
+    // Generate a signed URL valid for 7 days
+    const command = new GetObjectCommand({
+      Bucket: ENV.r2BucketName,
+      Key: key,
+    });
+    url = await getSignedUrl(client, command, { expiresIn: 604800 });
+  }
+  
+  return { key, url };
+}
+
+async function r2Get(relKey: string): Promise<{ key: string; url: string }> {
+  const client = createR2Client();
+  if (!client) {
+    throw new Error('R2 client not configured');
+  }
+  
+  const key = relKey.replace(/^\/+/, '');
+  
+  // Return public URL if configured, otherwise generate signed URL
+  let url: string;
+  if (ENV.r2PublicUrl) {
+    url = `${ENV.r2PublicUrl.replace(/\/+$/, '')}/${key}`;
+  } else {
+    const command = new GetObjectCommand({
+      Bucket: ENV.r2BucketName,
+      Key: key,
+    });
+    url = await getSignedUrl(client, command, { expiresIn: 604800 });
+  }
+  
+  return { key, url };
+}
+
+// Forge API storage functions
 function buildUploadUrl(baseUrl: string, relKey: string): URL {
   const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
+  url.searchParams.set("path", relKey.replace(/^\/+/, ''));
   return url;
 }
 
@@ -33,20 +117,16 @@ async function buildDownloadUrl(
     "v1/storage/downloadUrl",
     ensureTrailingSlash(baseUrl)
   );
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
+  downloadApiUrl.searchParams.set("path", relKey.replace(/^\/+/, ''));
   const response = await fetch(downloadApiUrl, {
     method: "GET",
-    headers: buildAuthHeaders(apiKey),
+    headers: { Authorization: `Bearer ${apiKey}` },
   });
   return (await response.json()).url;
 }
 
 function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
-}
-
-function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
 }
 
 function toFormData(
@@ -63,22 +143,18 @@ function toFormData(
   return form;
 }
 
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
-}
-
-export async function storagePut(
+async function forgePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream"
+  contentType: string
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
-  const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
+  const key = relKey.replace(/^\/+/, '');
+  const uploadUrl = buildUploadUrl(ENV.forgeApiUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
+  
   const response = await fetch(uploadUrl, {
     method: "POST",
-    headers: buildAuthHeaders(apiKey),
+    headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
     body: formData,
   });
 
@@ -92,11 +168,57 @@ export async function storagePut(
   return { key, url };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
-  const key = normalizeKey(relKey);
+async function forgeGet(relKey: string): Promise<{ key: string; url: string }> {
+  const key = relKey.replace(/^\/+/, '');
   return {
     key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
+    url: await buildDownloadUrl(ENV.forgeApiUrl, key, ENV.forgeApiKey),
   };
 }
+
+// Main storage functions
+export async function storagePut(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType = "application/octet-stream"
+): Promise<{ key: string; url: string }> {
+  const provider = getStorageProvider();
+  
+  console.log(`[Storage] Using ${provider} storage provider`);
+  
+  switch (provider) {
+    case 'r2':
+      return r2Put(relKey, data, contentType);
+    case 'forge':
+      return forgePut(relKey, data, contentType);
+    case 'local':
+    default:
+      return localStoragePut(relKey, data, contentType);
+  }
+}
+
+export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+  const provider = getStorageProvider();
+  
+  switch (provider) {
+    case 'r2':
+      return r2Get(relKey);
+    case 'forge':
+      return forgeGet(relKey);
+    case 'local':
+    default:
+      return localStorageGet(relKey);
+  }
+}
+
+// Export storage provider info for debugging
+export function getStorageInfo(): { provider: StorageProvider; configured: boolean } {
+  const provider = getStorageProvider();
+  return {
+    provider,
+    configured: provider !== 'local',
+  };
+}
+
+// Export local storage helpers for direct access
+export { localStorageRead, localStorageExists } from './local-storage';

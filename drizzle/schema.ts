@@ -1,3 +1,6 @@
+// Unified schema - exports based on database type
+// For now, we use MySQL schema as the primary and map to PostgreSQL at runtime
+
 import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
