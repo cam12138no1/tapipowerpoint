@@ -252,18 +252,18 @@ export default function Projects() {
                       <div className="flex gap-2">
                         <div
                           className="w-8 h-8 rounded-lg border border-border"
-                          style={{ backgroundColor: project.primaryColor }}
-                          title="主色调"
+                          style={{ backgroundColor: project.primaryColor || '#0033A0' }}
+                          title={`主色调: ${project.primaryColor || '#0033A0'}`}
                         />
                         <div
                           className="w-8 h-8 rounded-lg border border-border"
-                          style={{ backgroundColor: project.secondaryColor }}
-                          title="辅助色"
+                          style={{ backgroundColor: project.secondaryColor || '#58595B' }}
+                          title={`辅助色: ${project.secondaryColor || '#58595B'}`}
                         />
                         <div
                           className="w-8 h-8 rounded-lg border border-border"
-                          style={{ backgroundColor: project.accentColor }}
-                          title="强调色"
+                          style={{ backgroundColor: project.accentColor || '#C8A951' }}
+                          title={`强调色: ${project.accentColor || '#C8A951'}`}
                         />
                       </div>
                     </div>

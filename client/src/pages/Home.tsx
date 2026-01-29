@@ -130,15 +130,8 @@ export default function Home() {
       return;
     }
     
-    // 检查是否有输入内容
-    if (inputMode === 'file' && !sourceFile) {
-      toast.error("请上传源文档或切换到Proposal模式");
-      return;
-    }
-    if (inputMode === 'proposal' && !proposalContent.trim()) {
-      toast.error("请输入Proposal内容");
-      return;
-    }
+    // 内容来源可选：如果没有上传文件也没有输入Proposal，则使用标题作为唯一输入
+    // AI将根据标题自动搜索资料并生成PPT
 
     setIsUploading(true);
     
@@ -158,8 +151,12 @@ export default function Home() {
         });
         sourceFileId = result.engineFileId;
         sourceFileUrl = result.url;
-      } else if (inputMode === 'proposal') {
+      } else if (inputMode === 'proposal' && proposalContent.trim()) {
         proposalText = proposalContent.trim();
+      } else {
+        // 没有上传文件也没有输入Proposal，使用标题作为唯一输入
+        // AI将根据标题自动搜索资料并生成PPT
+        proposalText = title.trim();
       }
 
       // Upload images
@@ -291,8 +288,9 @@ export default function Home() {
                 <CardTitle className="text-base flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white gradient-navy">3</div>
                   内容来源
+                  <span className="text-xs font-normal text-muted-foreground ml-1">(可选)</span>
                 </CardTitle>
-                <CardDescription className="ml-11">选择上传文档或直接输入Proposal内容</CardDescription>
+                <CardDescription className="ml-11">可选：上传文档或输入Proposal。如果留空，AI将根据标题自动搜索资料生成PPT</CardDescription>
               </CardHeader>
               <CardContent className="ml-11">
                 <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as InputMode)} className="w-full">
@@ -469,7 +467,7 @@ export default function Home() {
               <Button
                 size="lg"
                 onClick={handleSubmit}
-                disabled={isUploading || !selectedProjectId || !title.trim() || (inputMode === 'file' && !sourceFile) || (inputMode === 'proposal' && !proposalContent.trim())}
+                disabled={isUploading || !selectedProjectId || !title.trim()}
                 className="h-14 px-10 text-base font-semibold btn-pro-gold shadow-pro"
               >
                 {isUploading ? (
