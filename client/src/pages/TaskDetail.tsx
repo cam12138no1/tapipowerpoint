@@ -240,6 +240,7 @@ export default function TaskDetail() {
   const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([]);
   const [slideContents, setSlideContents] = useState<SlideContent[]>([]);
   const [activeTab, setActiveTab] = useState<'process' | 'slides' | 'preview'>('process');
+  const [isDownloading, setIsDownloading] = useState<'pptx' | 'pdf' | null>(null);
   const lastOutputRef = useRef<string>("");
 
   const { data: task, isLoading, refetch } = trpc.task.get.useQuery(
@@ -493,9 +494,6 @@ export default function TaskDetail() {
   const handleRetry = () => {
     retryMutation.mutate({ taskId });
   };
-
-  // 下载状态
-  const [isDownloading, setIsDownloading] = useState<'pptx' | 'pdf' | null>(null);
 
   // 真实文件下载处理
   const handleDownloadPptx = async () => {
