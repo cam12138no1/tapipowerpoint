@@ -1,302 +1,301 @@
-import type { DesignSpec } from '../drizzle/schema';
+/**
+ * PPT Generation Engine Client
+ * Internal API client for PPT generation services
+ */
 
-// Types for PPT engine
-export interface ImageConfig {
-  fileId: string;
-  category: 'cover' | 'content' | 'chart' | 'background' | 'logo' | 'other';
-  description?: string;
-  usageMode: 'must_use' | 'suggest_use' | 'ai_decide';
+import axios, { AxiosInstance } from 'axios';
+
+// Internal API types
+export interface EngineProject {
+  id: string;
+  name: string;
+  instruction: string;
+  created_at: string;
 }
 
+export interface EngineFileUpload {
+  file_id: string;
+  upload_url: string;
+}
+
+export interface EngineTaskCreateResponse {
+  task_id: string;
+  task_title: string;
+  task_url: string;
+  share_url?: string;
+}
+
+// Output message content types from API
+export interface OutputContent {
+  type: 'output_text' | 'output_file' | 'output_image';
+  text?: string;
+  fileUrl?: string;
+  fileName?: string;
+  mimeType?: string;
+}
+
+// Output message from API
+export interface OutputMessage {
+  id: string;
+  status: string;
+  role: 'user' | 'assistant';
+  type: string;
+  content: OutputContent[];
+}
+
+export interface EngineTask {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'ask' | 'stopped';
+  title?: string;
+  output?: OutputMessage[];  // Array of messages from API
+  rawOutput?: any;  // Raw output for debugging
+  attachments?: Array<{
+    id?: string;
+    file_id?: string;
+    filename?: string;
+    file_name?: string;
+    url?: string;
+    download_url?: string;
+  }>;
+  share_url?: string;
+  task_url?: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: {
+    task_title?: string;
+    task_url?: string;
+  };
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  instruction: string;
+}
+
+export interface CreateTaskRequest {
+  prompt: string;
+  agentProfile?: string;
+  taskMode?: string;
+  projectId?: string;
+  attachments?: Array<{ fileId: string }>;
+  createShareableLink?: boolean;
+  interactiveMode?: boolean;
+}
+
+/**
+ * PPT Generation Engine Client
+ * Handles communication with the backend AI service
+ */
+class PPTEngineClient {
+  private client: AxiosInstance;
+
+  constructor() {
+    // Use environment variables for API configuration
+    const apiKey = process.env.PPT_ENGINE_API_KEY;
+    const baseURL = process.env.PPT_ENGINE_API_URL || 'https://api.manus.im/v1';
+
+    if (!apiKey) {
+      console.warn('[PPTEngine] API key is not configured. API calls will fail.');
+    }
+
+    this.client = axios.create({
+      baseURL,
+      timeout: 60000, // 60秒超时
+      headers: {
+        'API_KEY': apiKey || '',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    });
+  }
+
+  // Projects API
+  async createProject(data: CreateProjectRequest): Promise<EngineProject> {
+    const response = await this.client.post('/projects', data);
+    return response.data;
+  }
+
+  async getProject(projectId: string): Promise<EngineProject> {
+    const response = await this.client.get(`/projects/${projectId}`);
+    return response.data;
+  }
+
+  // Files API
+  async createFileUpload(fileName: string): Promise<EngineFileUpload> {
+    const response = await this.client.post('/files', {
+      filename: fileName,
+    });
+    return {
+      file_id: response.data.id,
+      upload_url: response.data.upload_url,
+    };
+  }
+
+  async uploadFileToUrl(uploadUrl: string, file: Buffer, contentType: string): Promise<void> {
+    await axios.put(uploadUrl, file, {
+      headers: {
+        'Content-Type': contentType,
+      },
+    });
+  }
+
+  // Tasks API
+  async createTask(data: CreateTaskRequest): Promise<EngineTaskCreateResponse> {
+    const requestBody = {
+      prompt: data.prompt,
+      agent_profile: data.agentProfile || 'manus-1.6-max',
+      task_mode: data.taskMode || 'agent',
+      project_id: data.projectId,
+      attachments: data.attachments,
+      create_shareable_link: data.createShareableLink ?? true,
+      interactive_mode: data.interactiveMode ?? true,
+    };
+    
+    console.log('[PPTEngine] Creating task...');
+    
+    const response = await this.client.post('/tasks', requestBody);
+    console.log('[PPTEngine] Task created successfully');
+    return response.data;
+  }
+
+  async getTask(taskId: string, convert: boolean = false): Promise<EngineTask> {
+    // Use convert=true to get converted PPTX preview data
+    const url = convert ? `/tasks/${taskId}?convert=true` : `/tasks/${taskId}`;
+    const response = await this.client.get(url);
+    console.log('[PPTEngine] Task status:', response.data.status);
+    
+    // Extract output array (API returns output as array of messages)
+    const output = response.data.output;
+    
+    // Extract attachments from output messages if present
+    const attachments: EngineTask['attachments'] = [];
+    if (Array.isArray(output)) {
+      output.forEach((msg: OutputMessage) => {
+        if (msg.content && Array.isArray(msg.content)) {
+          msg.content.forEach((item: OutputContent) => {
+            if (item.fileUrl && item.fileName) {
+              attachments.push({
+                filename: item.fileName,
+                url: item.fileUrl,
+              });
+            }
+          });
+        }
+      });
+    }
+    
+    return {
+      id: response.data.id || taskId,
+      status: response.data.status,
+      title: response.data.metadata?.task_title || response.data.title,
+      output: Array.isArray(output) ? output : undefined,
+      rawOutput: output,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      share_url: response.data.metadata?.task_url,
+      task_url: response.data.metadata?.task_url,
+      created_at: response.data.created_at,
+      updated_at: response.data.updated_at,
+      metadata: response.data.metadata,
+    };
+  }
+
+  async continueTask(taskId: string, userInput: string): Promise<EngineTaskCreateResponse> {
+    const response = await this.client.post('/tasks', {
+      prompt: userInput,
+      task_id: taskId,
+    });
+    return response.data;
+  }
+
+  // Helper: Upload a file completely (two-step process)
+  async uploadFile(fileName: string, fileBuffer: Buffer, contentType: string): Promise<string> {
+    // Step 1: Get file_id and upload_url
+    const { file_id, upload_url } = await this.createFileUpload(fileName);
+    
+    // Step 2: Upload file content to the presigned URL
+    await this.uploadFileToUrl(upload_url, fileBuffer, contentType);
+    
+    return file_id;
+  }
+}
+
+// Export singleton instance
+export const pptEngine = new PPTEngineClient();
+
+// Export class for testing
+export { PPTEngineClient };
+
+// Helper function to get MIME type from filename
+export function getMimeType(filename: string): string {
+  const ext = filename.toLowerCase().split('.').pop();
+  const mimeTypes: Record<string, string> = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  };
+  return mimeTypes[ext || ''] || 'application/octet-stream';
+}
+
+// Design specification interface
+export interface DesignSpec {
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  fontFamily: string;
+  designSpec?: string; // Additional design instructions
+  logoUrl?: string;
+}
+
+// Image usage mode type
+export type ImageUsageMode = 'must_use' | 'suggest_use' | 'ai_decide';
+
+// Image category type
+export type ImageCategory = 'cover' | 'content' | 'chart' | 'logo' | 'background' | 'other';
+
+// Enhanced image configuration interface
+export interface ImageConfig {
+  fileId: string;
+  usageMode: ImageUsageMode;
+  category: ImageCategory;
+  description: string;
+}
+
+// Legacy image format (for backward compatibility)
 export interface LegacyImageConfig {
   fileId: string;
   placement: string;
 }
 
-export interface PPTTask {
-  id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress: number;
-  result?: {
-    fileUrl: string;
-    fileName: string;
+// Helper function to get usage mode label in Chinese
+function getUsageModeLabel(mode: ImageUsageMode): string {
+  const labels: Record<ImageUsageMode, string> = {
+    must_use: '必须使用',
+    suggest_use: '建议使用',
+    ai_decide: 'AI自行决定',
   };
-  error?: string;
+  return labels[mode] || 'AI自行决定';
 }
 
-// API Configuration
-const PPT_API_BASE_URL = process.env.PPT_API_BASE_URL || 'https://api.manus.ai';
-const PPT_API_KEY = process.env.PPT_API_KEY || '';
-const API_TIMEOUT_MS = 60000; // 60 seconds timeout
-
-// Helper function to get category label
-function getCategoryLabel(category: string): string {
-  const labels: Record<string, string> = {
-    'cover': '封面图片',
-    'content': '内容配图',
-    'chart': '图表/数据图',
-    'background': '背景图片',
-    'logo': '品牌Logo',
-    'other': '其他用途'
+// Helper function to get category label in Chinese
+function getCategoryLabel(category: ImageCategory): string {
+  const labels: Record<ImageCategory, string> = {
+    cover: '封面/封底',
+    content: '内容配图',
+    chart: '数据图表',
+    logo: 'Logo/品牌标识',
+    background: '背景图片',
+    other: '其他用途',
   };
-  return labels[category] || '未分类';
-}
-
-// Create a new PPT task
-export async function createPPTTask(
-  prompt: string,
-  attachments: string[] = []
-): Promise<{ taskId: string }> {
-  console.log('[PPTEngine] Creating task...');
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(`${PPT_API_BASE_URL}/v1/tasks`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${PPT_API_KEY}`,
-      },
-      body: JSON.stringify({
-        prompt,
-        attachments,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to create task: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log('[PPTEngine] Task created successfully');
-    return { taskId: data.task_id || data.id };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-// Poll task status
-export async function pollTaskStatus(taskId: string): Promise<{
-  status: string;
-  progress: number;
-  output?: string;
-  error?: string;
-}> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(`${PPT_API_BASE_URL}/v1/tasks/${taskId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${PPT_API_KEY}`,
-      },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to poll task: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    
-    // Map API status to our status
-    let status = data.status;
-    if (status === 'running' || status === 'in_progress') {
-      status = 'processing';
-    } else if (status === 'succeeded' || status === 'success') {
-      status = 'completed';
-    }
-
-    return {
-      status,
-      progress: data.progress || 0,
-      output: data.output,
-      error: data.error,
-    };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-// Extract PPTX file URL from task output
-export function extractPPTXUrl(output: string): string | null {
-  if (!output) return null;
-  
-  // Try to find PPTX URL in the output
-  // Pattern 1: Direct URL ending with .pptx
-  const pptxUrlMatch = output.match(/https?:\/\/[^\s<>"]+\.pptx/i);
-  if (pptxUrlMatch) {
-    return pptxUrlMatch[0];
-  }
-  
-  // Pattern 2: Markdown link with .pptx
-  const mdLinkMatch = output.match(/\[([^\]]+)\]\((https?:\/\/[^\s<>"]+\.pptx)\)/i);
-  if (mdLinkMatch) {
-    return mdLinkMatch[2];
-  }
-  
-  // Pattern 3: URL in JSON format
-  try {
-    const jsonMatch = output.match(/\{[^}]*"url"\s*:\s*"([^"]+\.pptx)"[^}]*\}/i);
-    if (jsonMatch) {
-      return jsonMatch[1];
-    }
-  } catch {
-    // Ignore JSON parsing errors
-  }
-  
-  // Pattern 4: Any download URL
-  const downloadMatch = output.match(/https?:\/\/[^\s<>"]+\/download[^\s<>"]*/i);
-  if (downloadMatch) {
-    return downloadMatch[0];
-  }
-  
-  return null;
-}
-
-// Upload file to PPT API
-export async function uploadFile(
-  fileBuffer: Buffer,
-  fileName: string,
-  mimeType: string
-): Promise<string> {
-  console.log(`[PPTEngine] Uploading file: ${fileName}`);
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  
-  try {
-    // Create form data
-    const formData = new FormData();
-    const blob = new Blob([fileBuffer], { type: mimeType });
-    formData.append('file', blob, fileName);
-
-    const response = await fetch(`${PPT_API_BASE_URL}/v1/files`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PPT_API_KEY}`,
-      },
-      body: formData,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to upload file: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log(`[PPTEngine] File uploaded successfully: ${data.file_id || data.id}`);
-    return data.file_id || data.id;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-// Upload file from base64
-export async function uploadFileFromBase64(
-  base64Data: string,
-  fileName: string,
-  mimeType: string
-): Promise<string> {
-  // Remove data URL prefix if present
-  const base64Content = base64Data.replace(/^data:[^;]+;base64,/, '');
-  const buffer = Buffer.from(base64Content, 'base64');
-  return uploadFile(buffer, fileName, mimeType);
-}
-
-// Upload file from URL
-export async function uploadFileFromUrl(
-  url: string,
-  fileName: string
-): Promise<string> {
-  console.log(`[PPTEngine] Downloading file from URL: ${url}`);
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`Failed to download file: ${response.status}`);
-    }
-    
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const mimeType = response.headers.get('content-type') || 'application/octet-stream';
-    
-    return uploadFile(buffer, fileName, mimeType);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-// Get file info
-export async function getFileInfo(fileId: string): Promise<{
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string;
-  url?: string;
-}> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(`${PPT_API_BASE_URL}/v1/files/${fileId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${PPT_API_KEY}`,
-      },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get file info: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    return {
-      id: data.id || data.file_id,
-      name: data.name || data.filename,
-      size: data.size,
-      mimeType: data.mime_type || data.mimeType,
-      url: data.url,
-    };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-// Download file
-export async function downloadFile(fileId: string): Promise<Buffer> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(`${PPT_API_BASE_URL}/v1/files/${fileId}/content`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${PPT_API_KEY}`,
-      },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to download file: ${response.status} - ${errorText}`);
-    }
-
-    return Buffer.from(await response.arrayBuffer());
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return labels[category] || '其他用途';
 }
 
 // Build PPT generation prompt - optimized for autonomous execution with modular image config
@@ -316,29 +315,28 @@ export function buildPPTPrompt(
     '1. **严禁**在PPT的任何位置（尤其是封面页、首页、尾页）出现以下内容：',
     '   - "Powered by Manus"、"Made with Manus"、"由Manus提供支持"',
     '   - "Powered by AI"、"AI Generated"、"由AI生成"',
-    '   - 任何AI平台名称：Manus、OpenAI、Claude、GPT、Anthropic等',
-    '   - 任何"Powered by XXX"、"Built with XXX"格式的声明',
-    '   - 任何暗示内容来源的水印、Logo或脚注',
+    '   - "Powered by XXX"或任何类似的技术来源声明',
+    '   - Manus、OpenAI、Claude、GPT、Gemini等任何AI平台或模型名称',
+    '   - 任何暗示内容由AI生成的水印、Logo或标注',
     '',
-    '2. **封面页要求**：',
-    '   - 封面只能包含：PPT标题、副标题（如有）、日期（可选）、公司Logo（如用户提供）',
-    '   - **绝对禁止**在封面添加任何技术来源、工具名称或"Powered by"声明',
-    '   - 封面风格应像是由专业咨询顾问手工制作',
+    '2. **封面页特别要求**：',
+    '   - 封面页只能包含：标题、副标题、日期、公司名称（如用户提供）',
+    '   - 封面页**绝对禁止**出现任何"Powered by"、"Made with"等字样',
+    '   - 封面页**绝对禁止**出现任何AI工具的Logo或名称',
     '',
-    '3. 这是面向大型企业客户的专业商务交付，必须看起来100%是人工专业制作',
+    '3. **这是面向大型企业客户的专业交付**，必须确保PPT看起来100%是人工专业制作。',
     '',
     '---',
     '',
+    '请根据我提供的资料和要求，制作一份专业的行业PPT。',
+    '',
+    '**重要执行原则**：',
+    '- **自主决策**：请尽可能自主完成所有工作，不要频繁询问用户确认。',
+    '- **高效执行**：遇到需要选择的情况时，请根据专业判断直接做出最优决策。',
+    '- **仅在必要时询问**：只有在遇到无法自行判断的关键问题时才向用户提问。',
+    '- ⚠️ **品牌纯净**：在任何页面都不要添加AI工具品牌信息。',
+    '',
   ];
-
-  lines.push('请根据我提供的资料和要求，制作一份专业的行业PPT。');
-  lines.push('');
-  lines.push('**重要执行原则**：');
-  lines.push('- **自主决策**：请尽可能自主完成所有工作，不要频繁询问用户确认。');
-  lines.push('- **高效执行**：遇到需要选择的情况时，请根据专业判断直接做出最优决策。');
-  lines.push('- **仅在必要时询问**：只有在遇到无法自行判断的关键问题时才向用户提问。');
-  lines.push('- **品牌纯净**：绝对不在PPT中添加任何AI工具或平台的品牌信息。');
-  lines.push('');
 
   // 添加设计规范要求
   if (designSpec) {
@@ -350,7 +348,7 @@ export function buildPPTPrompt(
     lines.push(`- **强调色**：${designSpec.accentColor}（用于图表、按钮、高亮内容）`);
     lines.push(`- **字体**：${designSpec.fontFamily}（所有文字必须使用此字体）`);
     if (designSpec.logoUrl) {
-      lines.push(`- **Logo**：请在封面和结尾页使用用户提供的品牌Logo（不是AI工具Logo）`);
+      lines.push(`- **Logo**：请在封面和结尾页使用品牌Logo`);
     }
     if (designSpec.designSpec) {
       lines.push('');
@@ -362,7 +360,6 @@ export function buildPPTPrompt(
     lines.push('');
   } else {
     lines.push('**设计风格**：用户未指定设计规范，请根据内容主题自由发挥，选择最适合的专业商务风格。');
-    lines.push('**注意**：即使自由发挥，也严禁在任何页面添加AI工具品牌信息。');
     lines.push('');
   }
 
@@ -376,7 +373,6 @@ export function buildPPTPrompt(
     lines.push('   - 将内容组织成逻辑清晰的PPT页面结构');
     lines.push('   - 如果内容不够详细，请自动搜索相关资料进行补充');
     lines.push('   - 确保每页PPT都有充实的内容和专业的表达');
-    lines.push('   - ⚠️ 搜索补充资料时，不要在PPT中标注资料来源或AI工具名称');
     lines.push('');
     lines.push('**Proposal内容**：');
     lines.push('```');
@@ -387,10 +383,8 @@ export function buildPPTPrompt(
     lines.push('   - 基于我提供的源文档，提炼核心内容');
     lines.push('   - 将内容组织成逻辑清晰的PPT页面结构');
     lines.push('   - 如有需要，可自动搜索补充相关数据和信息');
-    lines.push('   - ⚠️ 搜索补充资料时，不要在PPT中标注资料来源或AI工具名称');
   } else {
     lines.push('1. **内容生成**：请根据设计规范和配图信息，生成一份专业的PPT。');
-    lines.push('   - ⚠️ 不要在PPT中添加任何AI工具或平台的品牌信息');
   }
 
   // 处理图片配置 - 支持新旧两种格式
@@ -483,14 +477,12 @@ export function buildPPTPrompt(
     lines.push('   - 对于未指定配图的页面，请首先在源文档中寻找相关图表或图片');
     lines.push('   - 如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片');
     lines.push('   - 请根据专业判断直接选择最合适的图片，无需向用户确认');
-    lines.push('   - ⚠️ 搜索配图时，不要选择带有AI工具水印或品牌标识的图片');
   } else {
     lines.push('');
     lines.push('2. **智能配图**（自动执行，无需确认）：');
     lines.push('   a. 请首先在源文档中寻找相关图表或图片。');
     lines.push('   b. 如果资料中无可用图片，请自动搜索高质量、风格匹配的商业图片。');
     lines.push('   c. 请根据专业判断直接选择最合适的图片，无需向用户确认。');
-    lines.push('   d. ⚠️ 搜索配图时，不要选择带有AI工具水印或品牌标识的图片。');
   }
 
   lines.push('');
@@ -498,7 +490,6 @@ export function buildPPTPrompt(
   lines.push('   - 如果Proposal或文档中的数据不够完整，请自动搜索最新的行业数据进行补充');
   lines.push('   - 可以添加相关的市场趋势、统计数据、案例分析等内容');
   lines.push('   - 确保PPT内容专业、充实、有说服力');
-  lines.push('   - ⚠️ 补充数据时，不要标注数据来源为AI工具或平台');
 
   lines.push('');
   lines.push('4. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
