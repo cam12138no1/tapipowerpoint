@@ -3,10 +3,12 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { FileText, HelpCircle, Image as ImageIcon, Info, Loader2, Plus, Sparkles, Upload, X } from "lucide-react";
+import { FileText, HelpCircle, Image as ImageIcon, Info, Loader2, MessageSquare, Plus, Sparkles, Upload, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -23,6 +25,8 @@ interface UploadedFile {
   placement?: string;
 }
 
+type InputMode = 'file' | 'proposal';
+
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -31,6 +35,10 @@ export default function Home() {
   const [sourceFile, setSourceFile] = useState<UploadedFile | null>(null);
   const [imageFiles, setImageFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // 新增：输入模式和proposal内容
+  const [inputMode, setInputMode] = useState<InputMode>('file');
+  const [proposalContent, setProposalContent] = useState("");
 
   // Fetch user's projects
   const { data: projects, isLoading: projectsLoading } = trpc.project.list.useQuery();
@@ -121,6 +129,16 @@ export default function Home() {
       toast.error("请输入PPT标题");
       return;
     }
+    
+    // 检查是否有输入内容
+    if (inputMode === 'file' && !sourceFile) {
+      toast.error("请上传源文档或切换到Proposal模式");
+      return;
+    }
+    if (inputMode === 'proposal' && !proposalContent.trim()) {
+      toast.error("请输入Proposal内容");
+      return;
+    }
 
     setIsUploading(true);
     
@@ -128,8 +146,9 @@ export default function Home() {
       // Upload source file to S3 and engine
       let sourceFileId: string | undefined;
       let sourceFileUrl: string | undefined;
+      let proposalText: string | undefined;
       
-      if (sourceFile) {
+      if (inputMode === 'file' && sourceFile) {
         const base64 = await fileToBase64(sourceFile.file);
         const result = await uploadMutation.mutateAsync({
           fileName: sourceFile.file.name,
@@ -139,6 +158,8 @@ export default function Home() {
         });
         sourceFileId = result.engineFileId;
         sourceFileUrl = result.url;
+      } else if (inputMode === 'proposal') {
+        proposalText = proposalContent.trim();
       }
 
       // Upload images
@@ -165,6 +186,7 @@ export default function Home() {
         projectId: parseInt(selectedProjectId),
         sourceFileName: sourceFile?.file.name,
         sourceFileUrl,
+        proposalContent: proposalText,
         imageAttachments: JSON.stringify(imageFileIds),
       });
 
@@ -172,6 +194,7 @@ export default function Home() {
       await startTaskMutation.mutateAsync({
         taskId: task.id,
         sourceFileId,
+        proposalContent: proposalText,
         imageFileIds,
       });
 
@@ -198,7 +221,7 @@ export default function Home() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold" style={{ color: 'oklch(0.25 0.05 250)' }}>创建专业PPT</h1>
-                <p className="text-muted-foreground text-sm">上传源文档，AI 将根据设计规范自动生成咨询级演示文稿</p>
+                <p className="text-muted-foreground text-sm">上传源文档或直接输入Proposal，AI 将根据设计规范自动生成咨询级演示文稿</p>
               </div>
             </div>
           </div>
@@ -261,58 +284,94 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Source Document Upload */}
+            {/* Source Content - File or Proposal */}
             <Card className="pro-card border-0 shadow-pro overflow-hidden">
               <div className="h-1 gradient-gold" />
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white gradient-navy">3</div>
-                  上传源文档
+                  内容来源
                 </CardTitle>
-                <CardDescription className="ml-11">支持 PDF、Word、TXT、Markdown 格式，最大 50MB</CardDescription>
+                <CardDescription className="ml-11">选择上传文档或直接输入Proposal内容</CardDescription>
               </CardHeader>
               <CardContent className="ml-11">
-                {sourceFile ? (
-                  <div className="flex items-center gap-4 p-4 bg-secondary/50 rounded-xl border border-border">
-                    <div className="w-14 h-14 rounded-xl flex items-center justify-center gradient-gold shadow-pro-sm">
-                      <FileText className="w-7 h-7 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground truncate">{sourceFile.file.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {(sourceFile.file.size / 1024 / 1024).toFixed(2)} MB
+                <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as InputMode)} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsTrigger value="file" className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      上传文档
+                    </TabsTrigger>
+                    <TabsTrigger value="proposal" className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      输入Proposal
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="file">
+                    {sourceFile ? (
+                      <div className="flex items-center gap-4 p-4 bg-secondary/50 rounded-xl border border-border">
+                        <div className="w-14 h-14 rounded-xl flex items-center justify-center gradient-gold shadow-pro-sm">
+                          <FileText className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-foreground truncate">{sourceFile.file.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {(sourceFile.file.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setSourceFile(null)}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="w-5 h-5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div
+                        className="dropzone group"
+                        onDrop={handleSourceDrop}
+                        onDragOver={(e) => e.preventDefault()}
+                        onClick={() => document.getElementById('source-input')?.click()}
+                      >
+                        <div className="w-16 h-16 mx-auto rounded-xl flex items-center justify-center bg-secondary/50 group-hover:bg-secondary transition-colors mb-4">
+                          <Upload className="w-8 h-8 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        </div>
+                        <p className="text-foreground font-medium mb-2">点击或拖拽文件到此处</p>
+                        <p className="text-sm text-muted-foreground">支持 PDF、Word、TXT、Markdown 格式，最大 50MB</p>
+                        <input
+                          id="source-input"
+                          type="file"
+                          accept=".pdf,.doc,.docx,.txt,.md"
+                          className="hidden"
+                          onChange={handleSourceSelect}
+                        />
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="proposal">
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-600" />
+                        <p className="text-sm text-blue-700">
+                          直接输入您的Proposal内容，AI将根据内容自动规划PPT结构并生成专业演示文稿。
+                          您可以描述主题、要点、数据等信息。
+                        </p>
+                      </div>
+                      <Textarea
+                        placeholder="请输入您的Proposal内容...&#10;&#10;例如：&#10;主题：2024年Q4市场分析报告&#10;&#10;一、市场概况&#10;- 整体市场规模达到500亿元&#10;- 同比增长15%&#10;&#10;二、竞争格局&#10;- 主要竞争对手分析&#10;- 我们的市场份额变化&#10;&#10;三、未来展望&#10;- 2025年市场预测&#10;- 战略建议"
+                        value={proposalContent}
+                        onChange={(e) => setProposalContent(e.target.value)}
+                        className="min-h-[300px] text-base leading-relaxed"
+                      />
+                      <p className="text-xs text-muted-foreground text-right">
+                        已输入 {proposalContent.length} 字符
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSourceFile(null)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="w-5 h-5" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div
-                    className="dropzone group"
-                    onDrop={handleSourceDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    onClick={() => document.getElementById('source-input')?.click()}
-                  >
-                    <div className="w-16 h-16 mx-auto rounded-xl flex items-center justify-center bg-secondary/50 group-hover:bg-secondary transition-colors mb-4">
-                      <Upload className="w-8 h-8 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    </div>
-                    <p className="text-foreground font-medium mb-2">点击或拖拽文件到此处</p>
-                    <p className="text-sm text-muted-foreground">支持 PDF、Word、TXT、Markdown 格式</p>
-                    <input
-                      id="source-input"
-                      type="file"
-                      accept=".pdf,.doc,.docx,.txt,.md"
-                      className="hidden"
-                      onChange={handleSourceSelect}
-                    />
-                  </div>
-                )}
+                  </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
 
@@ -341,7 +400,7 @@ export default function Home() {
                   <div className="flex items-start gap-2">
                     <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
                     <span>
-                      AI 将根据文档内容智能规划 PPT 结构。您可以上传希望使用的图片，并描述放置位置（如"封面"、"市场分析章节"、"结尾页"等）。未指定位置的图片，AI 会根据内容相关性自动匹配。
+                      AI 将根据内容智能规划 PPT 结构。您可以上传希望使用的图片，并描述放置位置（如"封面"、"市场分析章节"、"结尾页"等）。未指定位置的图片，AI 会根据内容相关性自动匹配。
                     </span>
                   </div>
                 </CardDescription>
@@ -410,7 +469,7 @@ export default function Home() {
               <Button
                 size="lg"
                 onClick={handleSubmit}
-                disabled={isUploading || !selectedProjectId || !title.trim()}
+                disabled={isUploading || !selectedProjectId || !title.trim() || (inputMode === 'file' && !sourceFile) || (inputMode === 'proposal' && !proposalContent.trim())}
                 className="h-14 px-10 text-base font-semibold btn-pro-gold shadow-pro"
               >
                 {isUploading ? (

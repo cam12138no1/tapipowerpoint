@@ -246,7 +246,8 @@ export function getMimeType(filename: string): string {
 // Build PPT generation prompt
 export function buildPPTPrompt(
   sourceFileId: string | null,
-  images: Array<{ fileId: string; placement: string }>
+  images: Array<{ fileId: string; placement: string }>,
+  proposalContent?: string
 ): string {
   const lines = [
     '请根据我提供的资料和要求，制作一份专业的行业PPT。',
@@ -255,8 +256,21 @@ export function buildPPTPrompt(
     '',
     '1. **严格遵循项目指令**：你必须严格遵守本项目关联的PPT设计规范。',
     '',
-    '2. **内容生成**：基于我提供的源文档，提炼核心内容，并将其组织成逻辑清晰的PPT页面结构。',
   ];
+
+  // 根据输入模式添加不同的内容生成指令
+  if (proposalContent) {
+    lines.push('2. **内容生成**：基于我提供的Proposal内容，提炼核心要点，并将其组织成逻辑清晰的PPT页面结构。');
+    lines.push('');
+    lines.push('**Proposal内容**：');
+    lines.push('```');
+    lines.push(proposalContent);
+    lines.push('```');
+  } else if (sourceFileId) {
+    lines.push('2. **内容生成**：基于我提供的源文档，提炼核心内容，并将其组织成逻辑清晰的PPT页面结构。');
+  } else {
+    lines.push('2. **内容生成**：请根据项目设计规范和配图信息，生成一份专业的PPT。');
+  }
 
   if (images.length > 0) {
     lines.push('');
@@ -278,6 +292,9 @@ export function buildPPTPrompt(
 
   lines.push('');
   lines.push('4. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
+  
+  lines.push('');
+  lines.push('5. **品牌要求**：严禁在PPT中出现任何第三方平台的品牌标识、水印或广告信息。');
 
   return lines.join('\n');
 }

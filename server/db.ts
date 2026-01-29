@@ -95,6 +95,7 @@ async function initPostgresTables(pool: Pool): Promise<void> {
           source_file_name VARCHAR(255),
           source_file_id VARCHAR(128),
           source_file_url TEXT,
+          proposal_content TEXT,
           image_attachments TEXT,
           interaction_data TEXT,
           output_content TEXT,

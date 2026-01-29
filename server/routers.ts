@@ -134,6 +134,7 @@ const taskRouter = router({
       projectId: z.number(),
       sourceFileName: z.string().optional(),
       sourceFileUrl: z.string().optional(),
+      proposalContent: z.string().optional(),
       imageAttachments: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -153,6 +154,7 @@ const taskRouter = router({
         progress: 0,
         sourceFileName: input.sourceFileName,
         sourceFileUrl: input.sourceFileUrl,
+        proposalContent: input.proposalContent,
         imageAttachments: input.imageAttachments || "[]",
       });
 
@@ -164,6 +166,7 @@ const taskRouter = router({
     .input(z.object({
       taskId: z.number(),
       sourceFileId: z.string().optional(),
+      proposalContent: z.string().optional(),
       imageFileIds: z.array(z.object({
         fileId: z.string(),
         placement: z.string(),
@@ -192,7 +195,7 @@ const taskRouter = router({
       await db.addTimelineEvent(input.taskId, "开始生成PPT", "running");
 
       // Build prompt
-      const prompt = buildPPTPrompt(input.sourceFileId || null, input.imageFileIds || []);
+      const prompt = buildPPTPrompt(input.sourceFileId || null, input.imageFileIds || [], input.proposalContent);
 
       // Prepare attachments
       const attachments: Array<{ fileId: string }> = [];
@@ -484,6 +487,44 @@ const taskRouter = router({
         });
         await db.addTimelineEvent(input.taskId, "重试失败", "failed");
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "重试失败" });
+      }
+    }),
+
+  // Regenerate a specific slide
+  regenerateSlide: protectedProcedure
+    .input(z.object({
+      taskId: z.number(),
+      slideIndex: z.number(),
+      instruction: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const task = await db.getPptTaskById(input.taskId);
+      if (!task || task.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
+      }
+
+      if (task.status !== "completed" || !task.engineTaskId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "只能对已完成的任务重新生成幻灯片" });
+      }
+
+      try {
+        // Build regeneration prompt
+        const regeneratePrompt = `请重新生成第 ${input.slideIndex + 1} 页幻灯片，根据以下要求修改：\n\n${input.instruction}\n\n请保持其他页面不变，只修改指定的页面，并重新生成完整的PPTX文件。`;
+
+        // Continue the task with regeneration instruction
+        await pptEngine.continueTask(task.engineTaskId, regeneratePrompt);
+        
+        await db.updatePptTask(input.taskId, {
+          status: "running",
+          currentStep: `正在重新生成第 ${input.slideIndex + 1} 页...`,
+          progress: 80,
+        });
+        await db.addTimelineEvent(input.taskId, `重新生成第 ${input.slideIndex + 1} 页`, "running");
+
+        return { success: true };
+      } catch (error) {
+        console.error("[Task] Failed to regenerate slide:", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "重新生成失败" });
       }
     }),
 

@@ -63,6 +63,7 @@ export const pptTasks = pgTable("ppt_tasks", {
   sourceFileName: varchar("source_file_name", { length: 255 }),
   sourceFileId: varchar("source_file_id", { length: 128 }),
   sourceFileUrl: text("source_file_url"),
+  proposalContent: text("proposal_content"),
   imageAttachments: text("image_attachments"),
   interactionData: text("interaction_data"),
   outputContent: text("output_content"),

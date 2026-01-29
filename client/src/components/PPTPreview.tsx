@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  ExternalLink,
   Loader2,
   Maximize2,
   Minimize2,
@@ -29,27 +28,24 @@ interface SlideData {
   content?: string;
 }
 
-export function PPTPreview({ pptxUrl, pdfUrl, shareUrl, title }: PPTPreviewProps) {
+export function PPTPreview({ pptxUrl, pdfUrl, title }: Omit<PPTPreviewProps, 'shareUrl'>) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [totalSlides, setTotalSlides] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
-  const [previewMode, setPreviewMode] = useState<'iframe' | 'pdf' | 'download'>('iframe');
+  const [previewMode, setPreviewMode] = useState<'pdf' | 'download'>('pdf');
 
-  // Determine best preview mode
+  // Determine best preview mode - only use PDF or download, no external iframe
   useEffect(() => {
-    if (shareUrl) {
-      setPreviewMode('iframe');
-      setIsLoading(false);
-    } else if (pdfUrl) {
+    if (pdfUrl) {
       setPreviewMode('pdf');
       setIsLoading(false);
     } else {
       setPreviewMode('download');
       setIsLoading(false);
     }
-  }, [shareUrl, pdfUrl]);
+  }, [pdfUrl]);
 
   const handlePrevSlide = () => {
     setCurrentSlide((prev) => Math.max(0, prev - 1));
@@ -154,14 +150,6 @@ export function PPTPreview({ pptxUrl, pdfUrl, shareUrl, title }: PPTPreviewProps
               <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-muted-foreground" />
               <p className="text-muted-foreground">正在加载预览...</p>
             </div>
-          ) : previewMode === 'iframe' && shareUrl ? (
-            <iframe
-              src={shareUrl}
-              className="w-full h-full border-0"
-              style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center' }}
-              title={`${title} 预览`}
-              allowFullScreen
-            />
           ) : previewMode === 'pdf' && pdfUrl ? (
             <iframe
               src={`${pdfUrl}#view=FitH`}
@@ -183,14 +171,6 @@ export function PPTPreview({ pptxUrl, pdfUrl, shareUrl, title }: PPTPreviewProps
                     下载 PPTX
                   </a>
                 </Button>
-                {shareUrl && (
-                  <Button variant="outline" asChild>
-                    <a href={shareUrl} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      在新窗口打开
-                    </a>
-                  </Button>
-                )}
               </div>
             </div>
           )}
@@ -199,14 +179,7 @@ export function PPTPreview({ pptxUrl, pdfUrl, shareUrl, title }: PPTPreviewProps
         {/* Controls Bar */}
         <div className="flex items-center justify-between p-4 border-t border-border bg-background">
           <div className="flex items-center gap-2">
-            {shareUrl && (
-              <Button variant="outline" size="sm" asChild>
-                <a href={shareUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  新窗口打开
-                </a>
-              </Button>
-            )}
+            {/* Reserved for future controls */}
           </div>
 
           <div className="flex items-center gap-3">

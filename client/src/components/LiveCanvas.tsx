@@ -120,12 +120,12 @@ function ContentBlockItem({
 
   return (
     <div className={cn(
-      "relative pl-8 pb-6",
-      !isLast && "border-l-2 border-border ml-3"
+      "relative pl-10 pb-6",
+      !isLast && "border-l-2 border-border ml-4"
     )}>
       {/* Timeline dot */}
       <div className={cn(
-        "absolute left-0 -translate-x-1/2 w-6 h-6 rounded-full flex items-center justify-center border-2 bg-background",
+        "absolute left-4 -translate-x-1/2 w-6 h-6 rounded-full flex items-center justify-center border-2 bg-background z-10",
         block.status === 'running' && "border-primary animate-pulse",
         block.status === 'completed' && "border-green-500",
         block.status === 'error' && "border-red-500",

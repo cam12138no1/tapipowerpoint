@@ -3,6 +3,7 @@ import { LiveCanvas, ContentBlock } from "@/components/LiveCanvas";
 import { UserInteractionPanel } from "@/components/UserInteractionPanel";
 import { RealProgressBar } from "@/components/RealProgressBar";
 import { PPTPreview } from "@/components/PPTPreview";
+import { EmbeddedPPTViewer } from "@/components/EmbeddedPPTViewer";
 import { SlidePreviewCanvas, SlideContent } from "@/components/SlidePreviewCanvas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { downloadFile } from "@/lib/download";
 import {
   AlertCircle,
   ArrowLeft,
@@ -492,6 +494,40 @@ export default function TaskDetail() {
     retryMutation.mutate({ taskId });
   };
 
+  // 下载状态
+  const [isDownloading, setIsDownloading] = useState<'pptx' | 'pdf' | null>(null);
+
+  // 真实文件下载处理
+  const handleDownloadPptx = async () => {
+    if (!task.resultPptxUrl) return;
+    setIsDownloading('pptx');
+    try {
+      await downloadFile(task.resultPptxUrl, `${task.title}.pptx`);
+      toast.success('PPTX 下载成功');
+    } catch (error) {
+      toast.error('下载失败，请重试');
+      // 回退到直接打开链接
+      window.open(task.resultPptxUrl, '_blank');
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!task.resultPdfUrl) return;
+    setIsDownloading('pdf');
+    try {
+      await downloadFile(task.resultPdfUrl, `${task.title}.pdf`);
+      toast.success('PDF 下载成功');
+    } catch (error) {
+      toast.error('下载失败，请重试');
+      // 回退到直接打开链接
+      window.open(task.resultPdfUrl, '_blank');
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="max-w-5xl mx-auto animate-fade-in">
@@ -605,10 +641,9 @@ export default function TaskDetail() {
                 
                 <TabsContent value="preview" className="mt-4">
                   {isCompleted && task.resultPptxUrl ? (
-                    <PPTPreview
+                    <EmbeddedPPTViewer
                       pptxUrl={task.resultPptxUrl}
                       pdfUrl={task.resultPdfUrl}
-                      shareUrl={task.shareUrl}
                       title={task.title}
                     />
                   ) : (
@@ -658,27 +693,31 @@ export default function TaskDetail() {
                 <CardContent>
                   <div className="flex flex-wrap gap-3">
                     {task.resultPptxUrl && (
-                      <Button asChild className="btn-pro-gold">
-                        <a href={task.resultPptxUrl} download={`${task.title}.pptx`}>
+                      <Button 
+                        className="btn-pro-gold" 
+                        onClick={handleDownloadPptx}
+                        disabled={isDownloading === 'pptx'}
+                      >
+                        {isDownloading === 'pptx' ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
                           <Download className="w-4 h-4 mr-2" />
-                          下载 PPTX
-                        </a>
+                        )}
+                        下载 PPTX
                       </Button>
                     )}
                     {task.resultPdfUrl && (
-                      <Button variant="outline" asChild>
-                        <a href={task.resultPdfUrl} download={`${task.title}.pdf`}>
+                      <Button 
+                        variant="outline" 
+                        onClick={handleDownloadPdf}
+                        disabled={isDownloading === 'pdf'}
+                      >
+                        {isDownloading === 'pdf' ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
                           <Download className="w-4 h-4 mr-2" />
-                          下载 PDF
-                        </a>
-                      </Button>
-                    )}
-                    {task.shareUrl && (
-                      <Button variant="outline" asChild>
-                        <a href={task.shareUrl} target="_blank" rel="noopener noreferrer">
-                          <Eye className="w-4 h-4 mr-2" />
-                          在线查看
-                        </a>
+                        )}
+                        下载 PDF
                       </Button>
                     )}
                   </div>

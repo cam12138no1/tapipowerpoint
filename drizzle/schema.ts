@@ -78,6 +78,9 @@ export const pptTasks = mysqlTable("pptTasks", {
   sourceFileId: varchar("sourceFileId", { length: 128 }),
   sourceFileUrl: text("sourceFileUrl"),
   
+  // Proposal content (alternative to file upload)
+  proposalContent: text("proposalContent"),
+  
   // Image attachments stored as JSON array string
   // [{fileName, fileId, fileUrl, placement}]
   imageAttachments: text("imageAttachments"),
