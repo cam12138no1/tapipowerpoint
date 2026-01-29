@@ -131,6 +131,38 @@ async function initPostgresTables(pool: Pool): Promise<void> {
   }
 }
 
+// Helper function to retry database connection
+async function connectWithRetry(maxRetries: number = 3, delayMs: number = 2000): Promise<Pool | null> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        max: 5,
+        min: 1,
+        idleTimeoutMillis: 60000,
+        connectionTimeoutMillis: 30000,
+        allowExitOnIdle: false,
+      });
+      
+      // Test the connection
+      const client = await pool.connect();
+      await client.query('SELECT 1');
+      client.release();
+      
+      console.log(`[Database] Connection successful on attempt ${attempt}`);
+      return pool;
+    } catch (error: any) {
+      console.warn(`[Database] Connection attempt ${attempt}/${maxRetries} failed:`, error.message);
+      if (attempt < maxRetries) {
+        console.log(`[Database] Retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  return null;
+}
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (_dbInitialized) return _db;
@@ -142,27 +174,23 @@ export async function getDb() {
       _dbType = detectDbType(process.env.DATABASE_URL);
       
       if (_dbType === 'postgres') {
-        _pool = new Pool({
-          connectionString: process.env.DATABASE_URL,
-          ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-          // 连接池配置优化
-          max: 10,                    // 最大连接数
-          min: 2,                     // 最小连接数
-          idleTimeoutMillis: 30000,   // 空闲连接超时时间
-          connectionTimeoutMillis: 10000, // 连接超时时间
-          allowExitOnIdle: false,     // 防止空闲时退出
-        });
+        // Use retry mechanism for PostgreSQL connection
+        _pool = await connectWithRetry(3, 3000);
         
-        // 监听连接池错误
-        _pool.on('error', (err) => {
-          console.error('[Database] Pool error:', err.message);
-        });
-        
-        // Initialize tables
-        await initPostgresTables(_pool);
-        
-        _db = drizzlePg(_pool, { schema: pgSchema });
-        console.log("[Database] Connected to PostgreSQL database");
+        if (_pool) {
+          // Listen for pool errors
+          _pool.on('error', (err) => {
+            console.error('[Database] Pool error:', err.message);
+          });
+          
+          // Initialize tables
+          await initPostgresTables(_pool);
+          
+          _db = drizzlePg(_pool, { schema: pgSchema });
+          console.log("[Database] Connected to PostgreSQL database");
+        } else {
+          throw new Error('Failed to connect after retries');
+        }
       } else {
         _db = drizzleMysql(process.env.DATABASE_URL);
         console.log("[Database] Connected to MySQL database");
