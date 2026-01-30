@@ -187,8 +187,52 @@ function parseOutputToBlocks(output: any[]): ContentBlock[] {
   return blocks;
 }
 
+// 无意义内容关键词 - 这些通常是AI的元信息或思考过程，不是真正的幻灯片内容
+const MEANINGLESS_CONTENT_KEYWORDS = [
+  '如何获取',
+  '下载链接',
+  '核心内容概览',
+  '视觉设计亮点',
+  '设计特点',
+  '配色方案',
+  '排版布局',
+  '素材运用',
+  '幻灯片概述',
+  'PPTX文件',
+  'PDF文件',
+  '文件已生成',
+  '点击下方链接',
+  '查看演示文稿',
+  '预览地址',
+  '分享链接',
+];
+
+// 检查文本是否是无意义的元信息
+function isMeaninglessContent(text: string): boolean {
+  // 检查是否包含无意义关键词
+  if (MEANINGLESS_CONTENT_KEYWORDS.some(keyword => text.includes(keyword))) {
+    return true;
+  }
+  // 检查是否包含内部指令
+  if (containsInternalInstructions(text)) {
+    return true;
+  }
+  // 检查内容是否太短（少于50字符的标题通常不是有意义的幻灯片）
+  const cleanText = text.replace(/^##?\s*[^\n]+\n/, '').trim();
+  if (cleanText.length < 50) {
+    return true;
+  }
+  return false;
+}
+
 // Parse API output to slide content for SlidePreviewCanvas
+// 注意：这个功能目前已禁用，因为AI输出格式不稳定，无法可靠地解析幻灯片内容
 function parseOutputToSlides(output: any[]): SlideContent[] {
+  // 暂时禁用幻灯片预览功能，因为解析逻辑不可靠
+  // 用户应该使用"成片预览"Tab查看最终的PPTX文件
+  return [];
+  
+  /* 原始解析逻辑已禁用
   if (!output || !Array.isArray(output)) return [];
   
   const slides: SlideContent[] = [];
@@ -201,9 +245,9 @@ function parseOutputToSlides(output: any[]): SlideContent[] {
       if (item.type === 'output_text' && item.text) {
         const text = item.text;
         
-        // 过滤掉包含内部指令的内容
-        if (containsInternalInstructions(text)) {
-          return; // 跳过这个内容块
+        // 过滤掉无意义的内容
+        if (isMeaninglessContent(text)) {
+          return;
         }
         
         // Look for slide markers in the text
@@ -214,7 +258,8 @@ function parseOutputToSlides(output: any[]): SlideContent[] {
           const sections = text.split(/(?=##\s)/);
           
           sections.forEach((section: string) => {
-            if (section.trim().length < 10) return;
+            // 再次检查每个部分是否有意义
+            if (section.trim().length < 100 || isMeaninglessContent(section)) return;
             
             slideNumber++;
             const title = extractTitle(section);
@@ -243,6 +288,7 @@ function parseOutputToSlides(output: any[]): SlideContent[] {
   });
   
   return slides;
+  */
 }
 
 function extractTitle(text: string): string {
@@ -640,22 +686,13 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {/* Tabs for Process/Slides/Preview */}
-            {(isCompleted || contentBlocks.length > 0 || slideContents.length > 0) && (
-              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-                <TabsList className="grid w-full grid-cols-3">
+            {/* Tabs for Process/Preview - 简化为两个Tab */}
+            {(isCompleted || contentBlocks.length > 0) && (
+              <Tabs value={activeTab === 'slides' ? 'process' : activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+                <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="process" className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4" />
                     生成过程
-                  </TabsTrigger>
-                  <TabsTrigger value="slides" className="flex items-center gap-2" disabled={slideContents.length === 0 && !isActive}>
-                    <Layout className="w-4 h-4" />
-                    幻灯片预览
-                    {slideContents.length > 0 && (
-                      <Badge variant="secondary" className="text-xs ml-1">
-                        {slideContents.length}
-                      </Badge>
-                    )}
                   </TabsTrigger>
                   <TabsTrigger value="preview" className="flex items-center gap-2" disabled={!isCompleted}>
                     <Presentation className="w-4 h-4" />
@@ -671,13 +708,6 @@ export default function TaskDetail() {
                   />
                 </TabsContent>
                 
-                <TabsContent value="slides" className="mt-4">
-                  <SlidePreviewCanvas
-                    slides={slideContents}
-                    isGenerating={isActive}
-                  />
-                </TabsContent>
-                
                 <TabsContent value="preview" className="mt-4">
                   {isCompleted ? (
                     task.resultPptxUrl ? (
@@ -686,6 +716,26 @@ export default function TaskDetail() {
                         pdfUrl={task.resultPdfUrl}
                         title={task.title}
                       />
+                    ) : task.shareUrl ? (
+                      <Card className="pro-card border-0 shadow-pro">
+                        <CardContent className="p-8 text-center">
+                          <Presentation className="w-12 h-12 mx-auto mb-4 text-primary" />
+                          <h3 className="text-lg font-semibold mb-2">PPT 已生成</h3>
+                          <p className="text-muted-foreground mb-4">您可以通过以下链接查看和下载您的PPT</p>
+                          <div className="flex flex-col gap-3 items-center">
+                            <Button asChild>
+                              <a href={task.shareUrl} target="_blank" rel="noopener noreferrer">
+                                <Eye className="w-4 h-4 mr-2" />
+                                在线查看 PPT
+                              </a>
+                            </Button>
+                            <Button variant="outline" onClick={() => refetch()}>
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              刷新状态
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ) : (
                       <Card className="pro-card border-0 shadow-pro">
                         <CardContent className="p-8 text-center">
@@ -742,24 +792,61 @@ export default function TaskDetail() {
                   <CardDescription>
                     {task.resultPptxUrl 
                       ? '您的PPT已成功生成，可以下载或在上方预览'
-                      : '任务已完成，文件正在处理中...'}
+                      : task.shareUrl
+                        ? '您的PPT已生成，请通过下方链接查看和下载'
+                        : '任务已完成，文件正在处理中...'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-3">
                     {task.resultPptxUrl ? (
-                      <Button 
-                        className="btn-pro-gold" 
-                        onClick={handleDownloadPptx}
-                        disabled={isDownloading === 'pptx'}
-                      >
-                        {isDownloading === 'pptx' ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4 mr-2" />
+                      <>
+                        <Button 
+                          className="btn-pro-gold" 
+                          onClick={handleDownloadPptx}
+                          disabled={isDownloading === 'pptx'}
+                        >
+                          {isDownloading === 'pptx' ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4 mr-2" />
+                          )}
+                          下载 PPTX
+                        </Button>
+                        {task.resultPdfUrl && (
+                          <Button 
+                            variant="outline" 
+                            onClick={handleDownloadPdf}
+                            disabled={isDownloading === 'pdf'}
+                          >
+                            {isDownloading === 'pdf' ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4 mr-2" />
+                            )}
+                            下载 PDF
+                          </Button>
                         )}
-                        下载 PPTX
-                      </Button>
+                      </>
+                    ) : task.shareUrl ? (
+                      <>
+                        <Button 
+                          className="btn-pro-gold" 
+                          asChild
+                        >
+                          <a href={task.shareUrl} target="_blank" rel="noopener noreferrer">
+                            <Eye className="w-4 h-4 mr-2" />
+                            在线查看并下载 PPT
+                          </a>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => refetch()}
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          刷新状态
+                        </Button>
+                      </>
                     ) : (
                       <Button 
                         variant="outline" 
@@ -767,20 +854,6 @@ export default function TaskDetail() {
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
                         刷新状态
-                      </Button>
-                    )}
-                    {task.resultPdfUrl && (
-                      <Button 
-                        variant="outline" 
-                        onClick={handleDownloadPdf}
-                        disabled={isDownloading === 'pdf'}
-                      >
-                        {isDownloading === 'pdf' ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4 mr-2" />
-                        )}
-                        下载 PDF
                       </Button>
                     )}
                   </div>

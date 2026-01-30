@@ -163,40 +163,87 @@ class PPTEngineClient {
     const url = convert ? `/tasks/${taskId}?convert=true` : `/tasks/${taskId}`;
     const response = await this.client.get(url);
     console.log('[PPTEngine] Task status:', response.data.status);
+    console.log('[PPTEngine] Full response keys:', Object.keys(response.data));
     
     // Extract output array (API returns output as array of messages)
     const output = response.data.output;
     
     // Extract attachments from output messages if present
-    // IMPORTANT: Only extract from the LAST assistant message to get the latest files
+    // Search through ALL messages for files, prioritizing the latest
     const attachments: EngineTask['attachments'] = [];
+    
     if (Array.isArray(output) && output.length > 0) {
-      // Find the last assistant message with file attachments
+      console.log(`[PPTEngine] Processing ${output.length} output messages`);
+      
       // Iterate from the end to find the most recent files
       for (let i = output.length - 1; i >= 0; i--) {
         const msg = output[i] as OutputMessage;
+        console.log(`[PPTEngine] Message ${i}: role=${msg.role}, type=${msg.type}, content_count=${msg.content?.length || 0}`);
+        
         if (msg.role === 'assistant' && msg.content && Array.isArray(msg.content)) {
           const filesInMessage: EngineTask['attachments'] = [];
-          msg.content.forEach((item: OutputContent) => {
-            if (item.type === 'output_file' && item.fileUrl && item.fileName) {
+          
+          msg.content.forEach((item: any, idx: number) => {
+            console.log(`[PPTEngine] Content ${idx}: type=${item.type}`);
+            
+            // Check for output_file type
+            if (item.type === 'output_file') {
+              // Try multiple possible field names for URL and filename
+              const fileUrl = item.fileUrl || item.file_url || item.url || item.download_url;
+              const fileName = item.fileName || item.file_name || item.filename || item.name;
+              
+              console.log(`[PPTEngine] Found output_file: url=${fileUrl?.substring(0, 50)}..., name=${fileName}`);
+              
+              if (fileUrl && fileName) {
+                filesInMessage.push({
+                  filename: fileName,
+                  url: fileUrl,
+                });
+                console.log(`[PPTEngine] Added file: ${fileName}`);
+              }
+            }
+            
+            // Also check for any item with file-like properties (backup)
+            if (!item.type && (item.fileUrl || item.file_url || item.url)) {
+              const fileUrl = item.fileUrl || item.file_url || item.url;
+              const fileName = item.fileName || item.file_name || item.filename || 'unknown_file';
+              console.log(`[PPTEngine] Found file without type: ${fileName}`);
               filesInMessage.push({
-                filename: item.fileName,
-                url: item.fileUrl,
+                filename: fileName,
+                url: fileUrl,
               });
-              console.log(`[PPTEngine] Found file in message ${i}: ${item.fileName}`);
             }
           });
+          
           // If we found files in this message, use them and stop looking
           if (filesInMessage.length > 0) {
             attachments.push(...filesInMessage);
-            console.log(`[PPTEngine] Using ${filesInMessage.length} files from message ${i} (latest with files)`);
+            console.log(`[PPTEngine] Using ${filesInMessage.length} files from message ${i}`);
             break;
           }
         }
       }
+    } else {
+      console.log('[PPTEngine] No output array found or empty');
+    }
+    
+    // Also check for attachments at the top level of response
+    if (response.data.attachments && Array.isArray(response.data.attachments)) {
+      console.log(`[PPTEngine] Found ${response.data.attachments.length} top-level attachments`);
+      response.data.attachments.forEach((att: any) => {
+        const fileUrl = att.url || att.download_url || att.fileUrl;
+        const fileName = att.filename || att.file_name || att.fileName;
+        if (fileUrl && fileName) {
+          attachments.push({ filename: fileName, url: fileUrl });
+          console.log(`[PPTEngine] Added top-level attachment: ${fileName}`);
+        }
+      });
     }
     
     console.log(`[PPTEngine] Total attachments extracted: ${attachments.length}`);
+    if (attachments.length === 0) {
+      console.log('[PPTEngine] WARNING: No attachments found! Raw output:', JSON.stringify(output).substring(0, 500));
+    }
     
     return {
       id: response.data.id || taskId,

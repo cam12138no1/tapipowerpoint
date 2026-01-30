@@ -357,9 +357,15 @@ const taskRouter = router({
             }
           } else {
             console.warn(`[Task ${input.taskId}] No attachments found in completed task!`);
+            console.log(`[Task ${input.taskId}] Raw output for debugging:`, JSON.stringify(engineTask.rawOutput).substring(0, 1000));
           }
           
-          console.log(`[Task ${input.taskId}] Final URLs - PPTX: ${resultPptxUrl ? 'set' : 'not set'}, PDF: ${resultPdfUrl ? 'set' : 'not set'}`);
+          // If no PPTX found but we have share_url, log it for manual retrieval
+          if (!resultPptxUrl && shareUrl) {
+            console.log(`[Task ${input.taskId}] No PPTX found, but share_url available: ${shareUrl}`);
+          }
+          
+          console.log(`[Task ${input.taskId}] Final URLs - PPTX: ${resultPptxUrl ? 'set' : 'not set'}, PDF: ${resultPdfUrl ? 'set' : 'not set'}, Share: ${shareUrl || 'not set'}`);
 
           await db.updatePptTask(input.taskId, {
             status: "completed",
