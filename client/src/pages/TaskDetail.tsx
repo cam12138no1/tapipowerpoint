@@ -679,12 +679,26 @@ export default function TaskDetail() {
                 </TabsContent>
                 
                 <TabsContent value="preview" className="mt-4">
-                  {isCompleted && task.resultPptxUrl ? (
-                    <EmbeddedPPTViewer
-                      pptxUrl={task.resultPptxUrl}
-                      pdfUrl={task.resultPdfUrl}
-                      title={task.title}
-                    />
+                  {isCompleted ? (
+                    task.resultPptxUrl ? (
+                      <EmbeddedPPTViewer
+                        pptxUrl={task.resultPptxUrl}
+                        pdfUrl={task.resultPdfUrl}
+                        title={task.title}
+                      />
+                    ) : (
+                      <Card className="pro-card border-0 shadow-pro">
+                        <CardContent className="p-8 text-center">
+                          <AlertCircle className="w-12 h-12 mx-auto mb-4 text-amber-500" />
+                          <h3 className="text-lg font-semibold mb-2">PPT 文件正在处理中</h3>
+                          <p className="text-muted-foreground mb-4">文件可能仍在上传到服务器，请稍后刷新页面</p>
+                          <Button variant="outline" onClick={() => refetch()}>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            刷新状态
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    )
                   ) : (
                     <Card className="pro-card border-0 shadow-pro">
                       <CardContent className="p-8 text-center">
@@ -726,12 +740,14 @@ export default function TaskDetail() {
                     生成完成
                   </CardTitle>
                   <CardDescription>
-                    您的PPT已成功生成，可以下载或在上方预览
+                    {task.resultPptxUrl 
+                      ? '您的PPT已成功生成，可以下载或在上方预览'
+                      : '任务已完成，文件正在处理中...'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-3">
-                    {task.resultPptxUrl && (
+                    {task.resultPptxUrl ? (
                       <Button 
                         className="btn-pro-gold" 
                         onClick={handleDownloadPptx}
@@ -743,6 +759,14 @@ export default function TaskDetail() {
                           <Download className="w-4 h-4 mr-2" />
                         )}
                         下载 PPTX
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="outline" 
+                        onClick={() => refetch()}
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        刷新状态
                       </Button>
                     )}
                     {task.resultPdfUrl && (
