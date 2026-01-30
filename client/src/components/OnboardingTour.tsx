@@ -249,9 +249,9 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
       };
     }
 
-    const padding = 20;
-    const tooltipWidth = 420;
-    const tooltipHeight = 400; // 增加高度估计
+    const padding = 16;
+    const tooltipWidth = 360;
+    const tooltipHeight = 320; // 减小高度估计
 
     let top = 0;
     let left = 0;
@@ -335,20 +335,20 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
       {/* 提示框 */}
       <Card 
         ref={tooltipRef}
-        className={`w-[420px] shadow-2xl border-0 overflow-hidden max-h-[85vh] overflow-y-auto transition-all duration-300 ${isAnimating ? 'opacity-80 scale-95' : 'opacity-100 scale-100'}`}
+        className={`w-[360px] shadow-2xl border-0 overflow-hidden max-h-[65vh] overflow-y-auto transition-all duration-300 ${isAnimating ? 'opacity-80 scale-95' : 'opacity-100 scale-100'}`}
         style={getTooltipStyle()}
       >
         {/* 顶部装饰条 */}
-        <div className="h-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600" />
+        <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600" />
         
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2 pt-3 px-4">
           <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center shadow-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center shadow-sm">
                 {step.icon}
               </div>
               <div>
-                <CardTitle className="text-lg">{step.title}</CardTitle>
+                <CardTitle className="text-base leading-tight">{step.title}</CardTitle>
                 <CardDescription className="text-xs mt-0.5">
                   步骤 {currentStep + 1} / {tourSteps.length}
                 </CardDescription>
@@ -357,28 +357,28 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-gray-100 rounded-full"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-gray-100 rounded-full"
               onClick={handleSkip}
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </Button>
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">
+        <CardContent className="space-y-3 px-4 pb-4">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             {step.description}
           </p>
 
-          {/* 详细说明列表 */}
+          {/* 详细说明列表 - 紧凑版 */}
           {step.details && step.details.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+            <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
               <p className="text-xs font-semibold text-gray-700">详细说明：</p>
-              <ul className="space-y-2">
+              <ul className="space-y-1">
                 {step.details.map((detail, index) => (
-                  <li key={index} className="flex items-start gap-2 text-xs text-gray-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
-                    <span>{detail}</span>
+                  <li key={index} className="flex items-start gap-1.5 text-xs text-gray-600">
+                    <span className="w-1 h-1 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
+                    <span className="leading-tight">{detail}</span>
                   </li>
                 ))}
               </ul>
@@ -386,67 +386,67 @@ export default function OnboardingTour({ isOpen, onClose, onComplete }: Onboardi
           )}
 
           {step.tip && (
-            <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
-              <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600" />
-              <p className="text-xs text-amber-700 font-medium">{step.tip}</p>
+            <div className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg border border-amber-200">
+              <Sparkles className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-600" />
+              <p className="text-xs text-amber-700 font-medium leading-tight">{step.tip}</p>
             </div>
           )}
 
           {/* 进度指示器 - 可点击 */}
-          <div className="flex justify-center gap-2 pt-2">
+          <div className="flex justify-center gap-1.5 pt-1">
             {tourSteps.map((_, index) => (
               <button
                 key={index}
                 onClick={() => handleDotClick(index)}
                 className={`rounded-full transition-all duration-300 hover:scale-110 ${
                   index === currentStep
-                    ? 'w-8 h-2 bg-amber-500'
+                    ? 'w-6 h-1.5 bg-amber-500'
                     : index < currentStep
-                    ? 'w-2 h-2 bg-amber-300 hover:bg-amber-400'
-                    : 'w-2 h-2 bg-gray-200 hover:bg-gray-300'
+                    ? 'w-1.5 h-1.5 bg-amber-300 hover:bg-amber-400'
+                    : 'w-1.5 h-1.5 bg-gray-200 hover:bg-gray-300'
                 }`}
                 title={`跳转到步骤 ${index + 1}`}
               />
             ))}
           </div>
 
-          {/* 操作按钮 */}
-          <div className="flex items-center justify-between pt-2">
+          {/* 操作按钮 - 紧凑版 */}
+          <div className="flex items-center justify-between">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleSkip}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-xs text-muted-foreground hover:text-foreground h-8 px-2"
             >
-              跳过教程
+              跳过
             </Button>
 
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {!isFirstStep && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handlePrev}
-                  className="gap-1"
+                  className="gap-0.5 h-8 px-2 text-xs"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
                   上一步
                 </Button>
               )}
               <Button
                 size="sm"
                 onClick={handleNext}
-                className="gap-1 bg-amber-500 hover:bg-amber-600 text-white shadow-md"
+                className="gap-0.5 h-8 px-3 text-xs bg-amber-500 hover:bg-amber-600 text-white shadow-sm"
               >
                 {isLastStep ? (
                   <>
-                    <CheckCircle className="w-4 h-4" />
+                    <CheckCircle className="w-3.5 h-3.5" />
                     完成
                   </>
                 ) : (
                   <>
                     下一步
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </>
                 )}
               </Button>
