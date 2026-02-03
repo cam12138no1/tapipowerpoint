@@ -240,7 +240,7 @@ const taskRouter = router({
           engineTaskId: engineTask.task_id,
           currentStep: "AI正在分析文档内容...",
           progress: 60,
-          shareUrl: engineTask.share_url || engineTask.task_url,
+          // Don't expose shareUrl to frontend - keep internal for debugging
         });
 
         return { success: true, engineTaskId: engineTask.task_id };
@@ -296,7 +296,7 @@ const taskRouter = router({
           let resultPptxUrl: string | undefined;
           let resultPdfUrl: string | undefined;
           
-          console.log(`[Task ${input.taskId}] Task completed, extracting files...`);
+          console.log(`[Task ${input.taskId}] Engine reports completed, extracting files...`);
           console.log(`[Task ${input.taskId}] Attachments count: ${engineTask.attachments?.length || 0}`);
           
           // Check attachments from the parsed output (already filtered to latest message in ppt-engine)
@@ -360,23 +360,33 @@ const taskRouter = router({
             console.log(`[Task ${input.taskId}] Raw output for debugging:`, JSON.stringify(engineTask.rawOutput).substring(0, 1000));
           }
           
-          // If no PPTX found but we have share_url, log it for manual retrieval
-          if (!resultPptxUrl && shareUrl) {
-            console.log(`[Task ${input.taskId}] No PPTX found, but share_url available: ${shareUrl}`);
+          // Only mark as completed if we actually have a PPTX file
+          // If engine says completed but no file, it might still be processing
+          if (resultPptxUrl) {
+            console.log(`[Task ${input.taskId}] PPTX file found, marking as completed`);
+            
+            await db.updatePptTask(input.taskId, {
+              status: "completed",
+              currentStep: "生成完成！",
+              progress: 100,
+              resultPptxUrl,
+              resultPdfUrl,
+              outputContent,
+              // Don't expose shareUrl to frontend
+            });
+            await db.addTimelineEvent(input.taskId, "PPT生成完成", "completed");
+          } else {
+            // Engine says completed but no PPTX - might still be processing or failed
+            console.warn(`[Task ${input.taskId}] Engine reports completed but no PPTX file found!`);
+            console.log(`[Task ${input.taskId}] Raw output for debugging:`, JSON.stringify(engineTask.rawOutput).substring(0, 500));
+            
+            // Keep task in running state, wait for next poll
+            await db.updatePptTask(input.taskId, {
+              currentStep: "AI正在导出PPT文件...",
+              progress: 95,
+              outputContent,
+            });
           }
-          
-          console.log(`[Task ${input.taskId}] Final URLs - PPTX: ${resultPptxUrl ? 'set' : 'not set'}, PDF: ${resultPdfUrl ? 'set' : 'not set'}, Share: ${shareUrl || 'not set'}`);
-
-          await db.updatePptTask(input.taskId, {
-            status: "completed",
-            currentStep: "生成完成！",
-            progress: 100,
-            resultPptxUrl,
-            resultPdfUrl,
-            outputContent,
-            shareUrl,
-          });
-          await db.addTimelineEvent(input.taskId, "PPT生成完成", "completed");
           
         } else if (engineTask.status === "failed" || engineTask.status === "stopped") {
           await db.updatePptTask(input.taskId, {
@@ -393,7 +403,7 @@ const taskRouter = router({
             currentStep: "需要您的确认",
             interactionData: JSON.stringify(engineTask.output),
             outputContent,
-            shareUrl,
+            // Don't expose shareUrl to frontend
           });
           await db.addTimelineEvent(input.taskId, "等待用户确认", "ask");
           
@@ -426,7 +436,7 @@ const taskRouter = router({
             progress: newProgress,
             currentStep,
             outputContent,
-            shareUrl,
+            // Don't expose shareUrl to frontend
           });
         }
       } catch (error) {
@@ -543,7 +553,7 @@ const taskRouter = router({
           engineTaskId: engineTask.task_id,
           currentStep: "AI正在分析文档内容...",
           progress: 60,
-          shareUrl: engineTask.share_url || engineTask.task_url,
+          // Don't expose shareUrl to frontend - keep internal for debugging
         });
 
         return { success: true, engineTaskId: engineTask.task_id };

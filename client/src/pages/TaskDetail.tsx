@@ -716,26 +716,6 @@ export default function TaskDetail() {
                         pdfUrl={task.resultPdfUrl}
                         title={task.title}
                       />
-                    ) : task.shareUrl ? (
-                      <Card className="pro-card border-0 shadow-pro">
-                        <CardContent className="p-8 text-center">
-                          <Presentation className="w-12 h-12 mx-auto mb-4 text-primary" />
-                          <h3 className="text-lg font-semibold mb-2">PPT 已生成</h3>
-                          <p className="text-muted-foreground mb-4">您可以通过以下链接查看和下载您的PPT</p>
-                          <div className="flex flex-col gap-3 items-center">
-                            <Button asChild>
-                              <a href={task.shareUrl} target="_blank" rel="noopener noreferrer">
-                                <Eye className="w-4 h-4 mr-2" />
-                                在线查看 PPT
-                              </a>
-                            </Button>
-                            <Button variant="outline" onClick={() => refetch()}>
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                              刷新状态
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
                     ) : (
                       <Card className="pro-card border-0 shadow-pro">
                         <CardContent className="p-8 text-center">
@@ -792,9 +772,7 @@ export default function TaskDetail() {
                   <CardDescription>
                     {task.resultPptxUrl 
                       ? '您的PPT已成功生成，可以下载或在上方预览'
-                      : task.shareUrl
-                        ? '您的PPT已生成，请通过下方链接查看和下载'
-                        : '任务已完成，文件正在处理中...'}
+                      : '任务已完成，文件正在处理中，请稍后刷新...'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -827,25 +805,6 @@ export default function TaskDetail() {
                             下载 PDF
                           </Button>
                         )}
-                      </>
-                    ) : task.shareUrl ? (
-                      <>
-                        <Button 
-                          className="btn-pro-gold" 
-                          asChild
-                        >
-                          <a href={task.shareUrl} target="_blank" rel="noopener noreferrer">
-                            <Eye className="w-4 h-4 mr-2" />
-                            在线查看并下载 PPT
-                          </a>
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          onClick={() => refetch()}
-                        >
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          刷新状态
-                        </Button>
                       </>
                     ) : (
                       <Button 
