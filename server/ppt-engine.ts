@@ -132,11 +132,26 @@ class PPTEngineClient {
   }
 
   async uploadFileToUrl(uploadUrl: string, file: Buffer, contentType: string): Promise<void> {
-    await axios.put(uploadUrl, file, {
-      headers: {
-        'Content-Type': contentType,
-      },
-    });
+    const fileSizeMB = file.length / (1024 * 1024);
+    // Increase timeout for larger files (base 60s + 30s per MB)
+    const timeout = Math.max(60000, 60000 + fileSizeMB * 30000);
+    
+    console.log(`[PPTEngine] Uploading file to presigned URL, size: ${fileSizeMB.toFixed(2)}MB, timeout: ${timeout/1000}s`);
+    
+    try {
+      await axios.put(uploadUrl, file, {
+        headers: {
+          'Content-Type': contentType,
+        },
+        timeout,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+      console.log('[PPTEngine] File upload to presigned URL completed');
+    } catch (error: any) {
+      console.error('[PPTEngine] File upload to presigned URL failed:', error.message);
+      throw error;
+    }
   }
 
   // Tasks API

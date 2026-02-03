@@ -717,22 +717,75 @@ const fileRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const buffer = Buffer.from(input.base64Data, "base64");
+      const fileSizeMB = buffer.length / (1024 * 1024);
+      
+      console.log(`[File] Uploading file: ${input.fileName}, size: ${fileSizeMB.toFixed(2)}MB`);
+      
+      // Check file size limit (50MB max for engine upload)
+      const MAX_FILE_SIZE_MB = 50;
+      if (fileSizeMB > MAX_FILE_SIZE_MB) {
+        throw new TRPCError({
+          code: "PAYLOAD_TOO_LARGE",
+          message: `文件太大（${fileSizeMB.toFixed(1)}MB），最大支持${MAX_FILE_SIZE_MB}MB`,
+        });
+      }
+      
       const fileKey = `uploads/${ctx.user.id}/${nanoid()}-${input.fileName}`;
       
       // Upload to S3
-      const { url } = await storagePut(fileKey, buffer, input.contentType);
+      let s3Url: string;
+      try {
+        const { url } = await storagePut(fileKey, buffer, input.contentType);
+        s3Url = url;
+        console.log(`[File] Uploaded to S3: ${fileKey}`);
+      } catch (error: any) {
+        console.error("[File] S3 upload failed:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `文件上传失败: ${error.message || '未知错误'}`,
+        });
+      }
       
       // Optionally upload to engine
       let engineFileId: string | undefined;
       if (input.uploadToEngine) {
         try {
+          console.log(`[File] Uploading to engine: ${input.fileName}`);
           engineFileId = await pptEngine.uploadFile(input.fileName, buffer, input.contentType);
-        } catch (error) {
+          console.log(`[File] Engine file ID: ${engineFileId}`);
+        } catch (error: any) {
           console.error("[File] Failed to upload to engine:", error);
+          // Extract meaningful error message
+          let errorMessage = '文件上传到AI服务失败';
+          if (error.response) {
+            // API returned an error response
+            const status = error.response.status;
+            const data = error.response.data;
+            if (status === 413) {
+              errorMessage = '文件太大，请压缩后重试';
+            } else if (status === 408 || status === 504) {
+              errorMessage = '上传超时，请稍后重试';
+            } else if (typeof data === 'string') {
+              errorMessage = data.substring(0, 100);
+            } else if (data?.message) {
+              errorMessage = data.message;
+            } else if (data?.error) {
+              errorMessage = data.error;
+            }
+          } else if (error.code === 'ECONNABORTED') {
+            errorMessage = '上传超时，请检查网络连接';
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+          
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: errorMessage,
+          });
         }
       }
 
-      return { url, fileKey, engineFileId };
+      return { url: s3Url, fileKey, engineFileId };
     }),
 });
 
