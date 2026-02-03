@@ -10,6 +10,11 @@ import { pptEngine, getMimeType, buildPPTPrompt, DesignSpec } from "./ppt-engine
 import { storagePut, storageGet } from "./storage";
 import { nanoid } from "nanoid";
 
+// In-memory retry counter for completed tasks without PPTX files
+// Key: taskId, Value: retry count
+// Note: This is stored in memory, so it resets on server restart
+const completedNoFileRetryCount = new Map<number, number>();
+
 // ============ Project Router ============
 const projectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -357,13 +362,59 @@ const taskRouter = router({
             }
           } else {
             console.warn(`[Task ${input.taskId}] No attachments found in completed task!`);
-            console.log(`[Task ${input.taskId}] Raw output for debugging:`, JSON.stringify(engineTask.rawOutput).substring(0, 1000));
+            
+            // Try to find file URLs directly in the raw output
+            const rawOutputStr = JSON.stringify(engineTask.rawOutput);
+            console.log(`[Task ${input.taskId}] Raw output for debugging:`, rawOutputStr.substring(0, 1500));
+            
+            // Search for any .pptx URL in the raw output
+            const pptxUrlMatch = rawOutputStr.match(/https?:\/\/[^"\s]+\.pptx[^"\s]*/i);
+            if (pptxUrlMatch) {
+              console.log(`[Task ${input.taskId}] Found PPTX URL in raw output: ${pptxUrlMatch[0].substring(0, 100)}...`);
+              try {
+                const response = await fetch(pptxUrlMatch[0]);
+                if (response.ok) {
+                  const buffer = Buffer.from(await response.arrayBuffer());
+                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
+                  const timestamp = Date.now();
+                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pptx`;
+                  const { url: s3Url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+                  resultPptxUrl = s3Url;
+                  console.log(`[Task ${input.taskId}] Extracted and stored PPTX from raw output`);
+                }
+              } catch (e) {
+                console.error(`[Task ${input.taskId}] Failed to download PPTX from raw output:`, e);
+              }
+            }
+            
+            // Also search for fileUrl patterns
+            const fileUrlMatch = rawOutputStr.match(/"fileUrl"\s*:\s*"([^"]+\.pptx[^"]*)"/i);
+            if (!resultPptxUrl && fileUrlMatch) {
+              console.log(`[Task ${input.taskId}] Found fileUrl in raw output: ${fileUrlMatch[1].substring(0, 100)}...`);
+              try {
+                const response = await fetch(fileUrlMatch[1]);
+                if (response.ok) {
+                  const buffer = Buffer.from(await response.arrayBuffer());
+                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
+                  const timestamp = Date.now();
+                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pptx`;
+                  const { url: s3Url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+                  resultPptxUrl = s3Url;
+                  console.log(`[Task ${input.taskId}] Extracted and stored PPTX from fileUrl pattern`);
+                }
+              } catch (e) {
+                console.error(`[Task ${input.taskId}] Failed to download PPTX from fileUrl:`, e);
+              }
+            }
           }
           
           // Only mark as completed if we actually have a PPTX file
           // If engine says completed but no file, it might still be processing
           if (resultPptxUrl) {
             console.log(`[Task ${input.taskId}] PPTX file found, marking as completed`);
+            
+            // Clean up retry counter on success
+            completedNoFileRetryCount.delete(input.taskId);
             
             await db.updatePptTask(input.taskId, {
               status: "completed",
@@ -376,16 +427,33 @@ const taskRouter = router({
             });
             await db.addTimelineEvent(input.taskId, "PPT生成完成", "completed");
           } else {
-            // Engine says completed but no PPTX - might still be processing or failed
-            console.warn(`[Task ${input.taskId}] Engine reports completed but no PPTX file found!`);
-            console.log(`[Task ${input.taskId}] Raw output for debugging:`, JSON.stringify(engineTask.rawOutput).substring(0, 500));
+            // Engine says completed but no PPTX - check retry count using in-memory counter
+            const currentRetryCount = completedNoFileRetryCount.get(input.taskId) || 0;
+            const maxRetries = 5; // Max 5 polls after completed status before marking as failed
             
-            // Keep task in running state, wait for next poll
-            await db.updatePptTask(input.taskId, {
-              currentStep: "AI正在导出PPT文件...",
-              progress: 95,
-              outputContent,
-            });
+            console.warn(`[Task ${input.taskId}] Engine reports completed but no PPTX file found! Retry ${currentRetryCount + 1}/${maxRetries}`);
+            console.log(`[Task ${input.taskId}] Raw output sample:`, JSON.stringify(engineTask.rawOutput).substring(0, 500));
+            
+            if (currentRetryCount >= maxRetries) {
+              // Give up and mark as failed
+              console.error(`[Task ${input.taskId}] Max retries reached, marking as failed`);
+              completedNoFileRetryCount.delete(input.taskId); // Clean up
+              await db.updatePptTask(input.taskId, {
+                status: "failed",
+                currentStep: "生成失败",
+                errorMessage: "AI完成了任务但未能生成PPT文件，请重试或联系支持",
+                outputContent,
+              });
+              await db.addTimelineEvent(input.taskId, "生成失败 - 未找到PPT文件", "failed");
+            } else {
+              // Keep trying - increment counter
+              completedNoFileRetryCount.set(input.taskId, currentRetryCount + 1);
+              await db.updatePptTask(input.taskId, {
+                currentStep: `AI正在导出PPT文件... (第${currentRetryCount + 1}次检查)`,
+                progress: 95,
+                outputContent,
+              });
+            }
           }
           
         } else if (engineTask.status === "failed" || engineTask.status === "stopped") {
