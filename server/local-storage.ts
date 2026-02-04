@@ -97,3 +97,35 @@ export function getStorageDir(): string {
   ensureStorageDir();
   return STORAGE_DIR;
 }
+
+// Synchronous write (alias for testing)
+export function localStorageWrite(
+  relKey: string,
+  data: Buffer | Uint8Array | string
+): void {
+  ensureStorageDir();
+  
+  const key = relKey.replace(/^\/+/, '');
+  const filePath = path.join(STORAGE_DIR, key);
+  
+  // Ensure subdirectory exists
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  
+  // Write file
+  if (typeof data === 'string') {
+    fs.writeFileSync(filePath, data, 'utf-8');
+  } else {
+    fs.writeFileSync(filePath, Buffer.from(data));
+  }
+}
+
+// Clear all stored files (for testing)
+export function localStorageClear(): void {
+  if (fs.existsSync(STORAGE_DIR)) {
+    fs.rmSync(STORAGE_DIR, { recursive: true, force: true });
+  }
+  ensureStorageDir();
+}

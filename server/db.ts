@@ -12,6 +12,7 @@ let _dbInitialized = false;
 let _dbType: 'postgres' | 'mysql' | 'memory' = 'memory';
 let _pool: Pool | null = null;
 let _connectionHealthy = false;
+let _isReconnecting = false; // Flag to prevent multiple simultaneous reconnection attempts
 
 // Check if we should use memory store
 function useMemoryStore(): boolean {
@@ -230,7 +231,14 @@ export async function getDb() {
             console.error('[Database] Pool error:', err.message);
             _connectionHealthy = false;
             
+            // Skip if already reconnecting
+            if (_isReconnecting) {
+              console.log('[Database] Reconnection already in progress, skipping...');
+              return;
+            }
+            
             // Attempt to reconnect in background
+            _isReconnecting = true;
             setTimeout(async () => {
               try {
                 const newPool = await connectWithRetry(3, 2000);
@@ -238,16 +246,20 @@ export async function getDb() {
                   const oldPool = _pool;
                   _pool = newPool;
                   _db = drizzlePg(_pool, { schema: pgSchema });
+                  _connectionHealthy = true;
                   
                   // Close old pool
                   try {
                     await oldPool?.end();
                   } catch (e) {
-                    // Ignore
+                    // Ignore close errors
                   }
+                  console.log('[Database] Successfully reconnected');
                 }
               } catch (e) {
                 console.error('[Database] Background reconnection failed:', e);
+              } finally {
+                _isReconnecting = false;
               }
             }, 1000);
           });

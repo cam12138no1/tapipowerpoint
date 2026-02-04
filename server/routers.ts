@@ -6,14 +6,67 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
-import { pptEngine, getMimeType, buildPPTPrompt, DesignSpec } from "./ppt-engine";
+import { pptEngine, getMimeType, buildPPTPrompt, DesignSpec, PPTEngineError } from "./ppt-engine";
 import { storagePut, storageGet } from "./storage";
 import { nanoid } from "nanoid";
 
-// In-memory retry counter for completed tasks without PPTX files
-// Key: taskId, Value: retry count
-// Note: This is stored in memory, so it resets on server restart
-const completedNoFileRetryCount = new Map<number, number>();
+// ============ Configuration ============
+const CONFIG = {
+  MAX_POLL_RETRIES: 10,           // Max retries when engine says completed but no file
+  FILE_DOWNLOAD_TIMEOUT: 30000,   // 30 seconds for file download
+  POLL_INTERVAL_MS: 2000,         // Client should poll every 2 seconds
+};
+
+// ============ Helper Functions ============
+
+/**
+ * Download file with timeout and retry
+ */
+async function downloadFileWithRetry(
+  url: string,
+  maxRetries: number = 3
+): Promise<Buffer | null> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CONFIG.FILE_DOWNLOAD_TIMEOUT);
+      
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error: any) {
+      console.warn(`[Download] Attempt ${attempt}/${maxRetries} failed:`, error.message);
+      if (attempt === maxRetries) return null;
+      await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+    }
+  }
+  return null;
+}
+
+/**
+ * Store file to S3 and return URL
+ */
+async function storeFileToS3(
+  buffer: Buffer,
+  userId: number,
+  taskId: number,
+  title: string,
+  extension: string,
+  contentType: string
+): Promise<string> {
+  const safeTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
+  const timestamp = Date.now();
+  const fileKey = `results/${userId}/${taskId}/${safeTitle}_${timestamp}.${extension}`;
+  
+  const { url } = await storagePut(fileKey, buffer, contentType);
+  console.log(`[Storage] Stored file: ${fileKey}`);
+  return url;
+}
 
 // ============ Project Router ============
 const projectRouter = router({
@@ -261,7 +314,7 @@ const taskRouter = router({
       }
     }),
 
-  // Poll task status - extracts real output content from API
+  // Poll task status - simplified and robust version
   poll: protectedProcedure
     .input(z.object({ taskId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -275,244 +328,163 @@ const taskRouter = router({
       }
 
       // Only poll if task is in active state
-      if (!["running", "uploading"].includes(task.status)) {
+      if (!["running", "uploading", "pending"].includes(task.status)) {
         return task;
       }
 
       try {
         const engineTask = await pptEngine.getTask(task.engineTaskId);
         
-        // Extract and store output content for real-time display
-        let outputContent = task.outputContent;
-        let shareUrl = task.shareUrl;
-        
-        // Update output content if available (API returns array of messages)
-        if (engineTask.output && Array.isArray(engineTask.output)) {
-          outputContent = JSON.stringify(engineTask.output);
-        }
-        
-        // Update share URL if available
-        if (engineTask.share_url) {
-          shareUrl = engineTask.share_url;
-        }
-        
-        if (engineTask.status === "completed") {
-          // Extract result files from attachments
-          let resultPptxUrl: string | undefined;
-          let resultPdfUrl: string | undefined;
-          
-          console.log(`[Task ${input.taskId}] Engine reports completed, extracting files...`);
-          console.log(`[Task ${input.taskId}] Attachments count: ${engineTask.attachments?.length || 0}`);
-          
-          // Check attachments from the parsed output (already filtered to latest message in ppt-engine)
-          if (engineTask.attachments && engineTask.attachments.length > 0) {
-            for (const att of engineTask.attachments) {
-              const filename = att.filename || att.file_name || "";
-              const url = att.url || att.download_url;
-              
-              console.log(`[Task ${input.taskId}] Processing attachment: ${filename}`);
-              
-              if (filename.toLowerCase().endsWith(".pptx") && url) {
-                // Download and store in S3 for permanent access
-                try {
-                  console.log(`[Task ${input.taskId}] Downloading PPTX from: ${url.substring(0, 100)}...`);
-                  const response = await fetch(url);
-                  if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                  }
-                  const buffer = Buffer.from(await response.arrayBuffer());
-                  console.log(`[Task ${input.taskId}] Downloaded PPTX, size: ${buffer.length} bytes`);
-                  
-                  // Use task title in filename for better identification
-                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
-                  const timestamp = Date.now();
-                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pptx`;
-                  
-                  const { url: s3Url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-                  resultPptxUrl = s3Url;
-                  console.log(`[Task ${input.taskId}] Stored PPTX to S3: ${fileKey}`);
-                } catch (e) {
-                  console.error(`[Task ${input.taskId}] Failed to store PPTX:`, e);
-                  resultPptxUrl = url;
-                }
-              }
-              
-              if (filename.toLowerCase().endsWith(".pdf") && url) {
-                try {
-                  console.log(`[Task ${input.taskId}] Downloading PDF from: ${url.substring(0, 100)}...`);
-                  const response = await fetch(url);
-                  if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                  }
-                  const buffer = Buffer.from(await response.arrayBuffer());
-                  console.log(`[Task ${input.taskId}] Downloaded PDF, size: ${buffer.length} bytes`);
-                  
-                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
-                  const timestamp = Date.now();
-                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pdf`;
-                  
-                  const { url: s3Url } = await storagePut(fileKey, buffer, "application/pdf");
-                  resultPdfUrl = s3Url;
-                  console.log(`[Task ${input.taskId}] Stored PDF to S3: ${fileKey}`);
-                } catch (e) {
-                  console.error(`[Task ${input.taskId}] Failed to store PDF:`, e);
-                  resultPdfUrl = url;
-                }
-              }
-            }
-          } else {
-            console.warn(`[Task ${input.taskId}] No attachments found in completed task!`);
+        // Update output content for real-time display
+        const outputContent = engineTask.output 
+          ? JSON.stringify(engineTask.output) 
+          : task.outputContent;
+
+        // Handle different statuses
+        switch (engineTask.status) {
+          case "completed": {
+            console.log(`[Task ${input.taskId}] Engine completed, processing files...`);
             
-            // Try to find file URLs directly in the raw output
-            const rawOutputStr = JSON.stringify(engineTask.rawOutput);
-            console.log(`[Task ${input.taskId}] Raw output for debugging:`, rawOutputStr.substring(0, 1500));
+            let resultPptxUrl: string | undefined;
+            let resultPdfUrl: string | undefined;
             
-            // Search for any .pptx URL in the raw output
-            const pptxUrlMatch = rawOutputStr.match(/https?:\/\/[^"\s]+\.pptx[^"\s]*/i);
-            if (pptxUrlMatch) {
-              console.log(`[Task ${input.taskId}] Found PPTX URL in raw output: ${pptxUrlMatch[0].substring(0, 100)}...`);
-              try {
-                const response = await fetch(pptxUrlMatch[0]);
-                if (response.ok) {
-                  const buffer = Buffer.from(await response.arrayBuffer());
-                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
-                  const timestamp = Date.now();
-                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pptx`;
-                  const { url: s3Url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-                  resultPptxUrl = s3Url;
-                  console.log(`[Task ${input.taskId}] Extracted and stored PPTX from raw output`);
-                }
-              } catch (e) {
-                console.error(`[Task ${input.taskId}] Failed to download PPTX from raw output:`, e);
+            // Use the improved file extraction from ppt-engine
+            if (engineTask.pptxFile?.url) {
+              console.log(`[Task ${input.taskId}] Found PPTX file: ${engineTask.pptxFile.filename}`);
+              const buffer = await downloadFileWithRetry(engineTask.pptxFile.url);
+              if (buffer) {
+                resultPptxUrl = await storeFileToS3(
+                  buffer,
+                  ctx.user.id,
+                  task.id,
+                  task.title,
+                  'pptx',
+                  'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                );
+              } else {
+                // Fall back to direct URL if download fails
+                console.warn(`[Task ${input.taskId}] Using direct URL for PPTX`);
+                resultPptxUrl = engineTask.pptxFile.url;
               }
             }
             
-            // Also search for fileUrl patterns
-            const fileUrlMatch = rawOutputStr.match(/"fileUrl"\s*:\s*"([^"]+\.pptx[^"]*)"/i);
-            if (!resultPptxUrl && fileUrlMatch) {
-              console.log(`[Task ${input.taskId}] Found fileUrl in raw output: ${fileUrlMatch[1].substring(0, 100)}...`);
-              try {
-                const response = await fetch(fileUrlMatch[1]);
-                if (response.ok) {
-                  const buffer = Buffer.from(await response.arrayBuffer());
-                  const safeTitle = task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_').substring(0, 50);
-                  const timestamp = Date.now();
-                  const fileKey = `results/${ctx.user.id}/${task.id}/${safeTitle}_${timestamp}.pptx`;
-                  const { url: s3Url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-                  resultPptxUrl = s3Url;
-                  console.log(`[Task ${input.taskId}] Extracted and stored PPTX from fileUrl pattern`);
-                }
-              } catch (e) {
-                console.error(`[Task ${input.taskId}] Failed to download PPTX from fileUrl:`, e);
+            if (engineTask.pdfFile?.url) {
+              console.log(`[Task ${input.taskId}] Found PDF file: ${engineTask.pdfFile.filename}`);
+              const buffer = await downloadFileWithRetry(engineTask.pdfFile.url);
+              if (buffer) {
+                resultPdfUrl = await storeFileToS3(
+                  buffer,
+                  ctx.user.id,
+                  task.id,
+                  task.title,
+                  'pdf',
+                  'application/pdf'
+                );
+              } else {
+                resultPdfUrl = engineTask.pdfFile.url;
               }
             }
+            
+            if (resultPptxUrl) {
+              console.log(`[Task ${input.taskId}] Success! PPTX URL: ${resultPptxUrl.substring(0, 80)}...`);
+              await db.updatePptTask(input.taskId, {
+                status: "completed",
+                currentStep: "生成完成！",
+                progress: 100,
+                resultPptxUrl,
+                resultPdfUrl,
+                outputContent,
+              });
+              await db.addTimelineEvent(input.taskId, "PPT生成完成", "completed");
+            } else {
+              // Completed but no file - use retry counter from database
+              const retryData = JSON.parse(task.interactionData || '{"retryCount":0}');
+              const currentRetry = (retryData.retryCount || 0) + 1;
+              
+              console.warn(`[Task ${input.taskId}] No PPTX found, retry ${currentRetry}/${CONFIG.MAX_POLL_RETRIES}`);
+              
+              if (currentRetry >= CONFIG.MAX_POLL_RETRIES) {
+                await db.updatePptTask(input.taskId, {
+                  status: "failed",
+                  currentStep: "生成失败",
+                  errorMessage: "AI完成任务但未能导出PPT文件，请点击重试按钮",
+                  outputContent,
+                  interactionData: null,
+                });
+                await db.addTimelineEvent(input.taskId, "生成失败 - 未找到PPT文件", "failed");
+              } else {
+                await db.updatePptTask(input.taskId, {
+                  currentStep: `正在导出PPT文件... (${currentRetry}/${CONFIG.MAX_POLL_RETRIES})`,
+                  progress: 95 + Math.min(currentRetry, 4),
+                  outputContent,
+                  interactionData: JSON.stringify({ retryCount: currentRetry }),
+                });
+              }
+            }
+            break;
           }
           
-          // Only mark as completed if we actually have a PPTX file
-          // If engine says completed but no file, it might still be processing
-          if (resultPptxUrl) {
-            console.log(`[Task ${input.taskId}] PPTX file found, marking as completed`);
+          case "failed":
+          case "stopped": {
+            await db.updatePptTask(input.taskId, {
+              status: "failed",
+              currentStep: "生成失败",
+              errorMessage: engineTask.status === "stopped" ? "任务已被停止" : "生成过程中出错",
+              outputContent,
+            });
+            await db.addTimelineEvent(input.taskId, "生成失败", "failed");
+            break;
+          }
+          
+          case "ask": {
+            await db.updatePptTask(input.taskId, {
+              status: "ask",
+              currentStep: "需要您的确认",
+              interactionData: JSON.stringify(engineTask.output),
+              outputContent,
+            });
+            await db.addTimelineEvent(input.taskId, "等待用户确认", "ask");
+            break;
+          }
+          
+          default: {
+            // Still running - calculate progress
+            let progress = task.progress || 60;
+            let currentStep = "AI正在处理中...";
             
-            // Clean up retry counter on success
-            completedNoFileRetryCount.delete(input.taskId);
+            if (engineTask.output && Array.isArray(engineTask.output)) {
+              // More messages = more progress (cap at 94%)
+              progress = Math.min(60 + engineTask.output.length * 2, 94);
+              
+              // Get latest step from output
+              const lastMsg = engineTask.output[engineTask.output.length - 1];
+              if (lastMsg?.content) {
+                const textItem = lastMsg.content.find((c: any) => c.type === 'output_text');
+                if (textItem?.text) {
+                  const firstLine = textItem.text.split('\n')[0].trim();
+                  if (firstLine.length > 5 && firstLine.length < 100) {
+                    currentStep = firstLine;
+                  }
+                }
+              }
+            }
             
             await db.updatePptTask(input.taskId, {
-              status: "completed",
-              currentStep: "生成完成！",
-              progress: 100,
-              resultPptxUrl,
-              resultPdfUrl,
+              progress,
+              currentStep,
               outputContent,
-              // Don't expose shareUrl to frontend
             });
-            await db.addTimelineEvent(input.taskId, "PPT生成完成", "completed");
-          } else {
-            // Engine says completed but no PPTX - check retry count using in-memory counter
-            const currentRetryCount = completedNoFileRetryCount.get(input.taskId) || 0;
-            const maxRetries = 5; // Max 5 polls after completed status before marking as failed
-            
-            console.warn(`[Task ${input.taskId}] Engine reports completed but no PPTX file found! Retry ${currentRetryCount + 1}/${maxRetries}`);
-            console.log(`[Task ${input.taskId}] Raw output sample:`, JSON.stringify(engineTask.rawOutput).substring(0, 500));
-            
-            if (currentRetryCount >= maxRetries) {
-              // Give up and mark as failed
-              console.error(`[Task ${input.taskId}] Max retries reached, marking as failed`);
-              completedNoFileRetryCount.delete(input.taskId); // Clean up
-              await db.updatePptTask(input.taskId, {
-                status: "failed",
-                currentStep: "生成失败",
-                errorMessage: "AI完成了任务但未能生成PPT文件，请重试或联系支持",
-                outputContent,
-              });
-              await db.addTimelineEvent(input.taskId, "生成失败 - 未找到PPT文件", "failed");
-            } else {
-              // Keep trying - increment counter
-              completedNoFileRetryCount.set(input.taskId, currentRetryCount + 1);
-              await db.updatePptTask(input.taskId, {
-                currentStep: `AI正在导出PPT文件... (第${currentRetryCount + 1}次检查)`,
-                progress: 95,
-                outputContent,
-              });
-            }
           }
-          
-        } else if (engineTask.status === "failed" || engineTask.status === "stopped") {
-          await db.updatePptTask(input.taskId, {
-            status: "failed",
-            currentStep: "生成失败",
-            errorMessage: "生成任务失败或已停止",
-            outputContent,
-          });
-          await db.addTimelineEvent(input.taskId, "生成失败", "failed");
-          
-        } else if (engineTask.status === "ask") {
-          await db.updatePptTask(input.taskId, {
-            status: "ask",
-            currentStep: "需要您的确认",
-            interactionData: JSON.stringify(engineTask.output),
-            outputContent,
-            // Don't expose shareUrl to frontend
-          });
-          await db.addTimelineEvent(input.taskId, "等待用户确认", "ask");
-          
-        } else {
-          // Still running, calculate progress based on output content
-          let newProgress = task.progress || 60;
-          let currentStep = task.currentStep || "AI正在处理中...";
-          
-          // Analyze output content to determine actual progress
-          if (engineTask.output && Array.isArray(engineTask.output)) {
-            const outputLength = engineTask.output.length;
-            // More output messages = more progress (cap at 95%)
-            newProgress = Math.min(60 + Math.floor(outputLength * 3), 95);
-            
-            // Extract current step from latest output
-            const latestOutput = engineTask.output[engineTask.output.length - 1];
-            if (latestOutput && latestOutput.content) {
-              const textContent = latestOutput.content.find((c: any) => c.type === 'output_text');
-              if (textContent && textContent.text) {
-                // Extract first line as current step (max 100 chars)
-                const firstLine = textContent.text.split('\n')[0].substring(0, 100);
-                if (firstLine && firstLine.length > 5) {
-                  currentStep = firstLine;
-                }
-              }
-            }
-          }
-          
-          await db.updatePptTask(input.taskId, {
-            progress: newProgress,
-            currentStep,
-            outputContent,
-            // Don't expose shareUrl to frontend
-          });
         }
       } catch (error) {
-        console.error("[Task] Error polling engine task:", error);
-        // Don't fail the task on polling error, just log it
+        if (error instanceof PPTEngineError && error.retryable) {
+          console.warn(`[Task ${input.taskId}] Retryable error:`, error.message);
+          // Don't update task status for retryable errors
+        } else {
+          console.error(`[Task ${input.taskId}] Poll error:`, error);
+        }
       }
 
-      // Return updated task
       return db.getPptTaskById(input.taskId);
     }),
 
@@ -903,16 +875,68 @@ function buildDesignInstruction(config: {
   return lines.join("\n");
 }
 
+// ============ Auth Router ============
+import { createToken } from "./_core/auth";
+
+const authRouter = router({
+  me: publicProcedure.query(opts => opts.ctx.user),
+  
+  // Login endpoint - creates JWT token
+  login: publicProcedure
+    .input(z.object({
+      username: z.string().min(1, "用户名不能为空"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const username = input.username.trim();
+      
+      // Generate a stable openId from username
+      const openId = `user_${username.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      
+      // Get or create user
+      const user = await db.getOrCreateUser(openId, username);
+      if (!user) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "创建用户失败" });
+      }
+      
+      // Generate JWT token
+      const { token, expiresAt } = await createToken({
+        userId: user.id,
+        openId: user.openId,
+        name: user.name || username,
+        role: user.role as 'user' | 'admin',
+      });
+      
+      // Set cookie
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie('auth_token', token, {
+        ...cookieOptions,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+      
+      return { 
+        success: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          openId: user.openId,
+          role: user.role,
+        },
+        token,
+        expiresAt,
+      };
+    }),
+  
+  logout: publicProcedure.mutation(({ ctx }) => {
+    const cookieOptions = getSessionCookieOptions(ctx.req);
+    ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    ctx.res.clearCookie('auth_token', { ...cookieOptions, maxAge: -1 });
+    return { success: true } as const;
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
-  auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return { success: true } as const;
-    }),
-  }),
+  auth: authRouter,
   project: projectRouter,
   task: taskRouter,
   file: fileRouter,

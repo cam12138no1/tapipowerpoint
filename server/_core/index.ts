@@ -81,6 +81,53 @@ async function startServer() {
     res.send(fileData);
   });
   
+  // File download proxy endpoint - helps with CORS issues
+  app.get("/api/download", async (req, res) => {
+    const { url, filename } = req.query;
+    
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: "URL parameter required" });
+    }
+    
+    try {
+      // Validate URL
+      const parsedUrl = new URL(url);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return res.status(400).json({ error: "Invalid URL protocol" });
+      }
+      
+      console.log(`[Download Proxy] Fetching: ${url.substring(0, 100)}...`);
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'TapiPowerPoint/1.0',
+        },
+      });
+      
+      if (!response.ok) {
+        console.error(`[Download Proxy] Failed: ${response.status} ${response.statusText}`);
+        return res.status(response.status).json({ 
+          error: `Remote server returned ${response.status}` 
+        });
+      }
+      
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      const downloadName = typeof filename === 'string' ? filename : 'download';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', buffer.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"`);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.send(buffer);
+      
+      console.log(`[Download Proxy] Success: ${buffer.length} bytes`);
+    } catch (error: any) {
+      console.error('[Download Proxy] Error:', error.message);
+      res.status(500).json({ error: error.message || 'Download failed' });
+    }
+  });
+  
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

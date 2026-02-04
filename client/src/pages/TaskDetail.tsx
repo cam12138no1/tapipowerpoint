@@ -453,7 +453,7 @@ export default function TaskDetail() {
   useEffect(() => {
     if (!task) return;
     
-    const isActive = ["uploading", "running"].includes(task.status);
+    const isActive = ["uploading", "running", "pending"].includes(task.status);
     if (!isActive) return;
 
     // Initial content blocks update
@@ -471,16 +471,34 @@ export default function TaskDetail() {
           }
         }
       } catch (e) {
+        console.warn('[TaskDetail] Failed to parse output content:', e);
         updateContentBlocksFromText(task.outputContent);
       }
     }
 
+    // Use a flag to prevent concurrent polling requests
+    let isMounted = true;
+    let isPolling = false;
+
     const interval = setInterval(() => {
-      pollMutation.mutate({ taskId });
+      // Skip if previous poll is still in progress or component unmounted
+      if (isPolling || !isMounted || pollMutation.isPending) {
+        return;
+      }
+      
+      isPolling = true;
+      pollMutation.mutate({ taskId }, {
+        onSettled: () => {
+          isPolling = false;
+        },
+      });
     }, 2000);
 
-    return () => clearInterval(interval);
-  }, [task?.status, taskId, updateContentBlocksFromText]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [task?.status, taskId]);
 
   // Switch to preview tab when completed
   useEffect(() => {
@@ -542,10 +560,10 @@ export default function TaskDetail() {
     try {
       const rawData = JSON.parse(task.interactionData);
       // Parse from API output format
-      if (Array.isArray(rawData)) {
+      if (Array.isArray(rawData) && rawData.length > 0) {
         const lastMessage = rawData[rawData.length - 1];
-        if (lastMessage?.content) {
-          const textContent = lastMessage.content.find((c: any) => c.type === 'output_text');
+        if (lastMessage?.content && Array.isArray(lastMessage.content)) {
+          const textContent = lastMessage.content.find((c: { type: string; text?: string }) => c.type === 'output_text');
           if (textContent?.text) {
             interactionContent = {
               type: 'text',
@@ -554,10 +572,11 @@ export default function TaskDetail() {
             };
           }
         }
-      } else {
+      } else if (rawData && typeof rawData === 'object') {
         interactionContent = rawData;
       }
-    } catch {
+    } catch (e) {
+      console.warn('[TaskDetail] Failed to parse interaction data:', e);
       interactionContent = {
         type: 'text',
         title: '需要您的输入',
@@ -582,35 +601,61 @@ export default function TaskDetail() {
     retryMutation.mutate({ taskId });
   };
 
-  // 真实文件下载处理
+  // 文件下载处理 - 增强版本，带进度和备用方案
   const handleDownloadPptx = async () => {
-    if (!task.resultPptxUrl) return;
+    if (!task.resultPptxUrl) {
+      toast.error('文件链接不存在，请刷新页面');
+      return;
+    }
+    
     setIsDownloading('pptx');
+    const filename = `${task.title.replace(/[^\w\u4e00-\u9fa5]/g, '_')}.pptx`;
+    
     try {
-      await downloadFile(task.resultPptxUrl, `${task.title}.pptx`);
+      await downloadFile(task.resultPptxUrl, filename, (progress) => {
+        // 可以在这里显示进度，暂时忽略
+      });
       toast.success('PPTX 下载成功');
-    } catch (error) {
-      toast.error('下载失败，请重试');
-      // 回退到直接打开链接
-      window.open(task.resultPptxUrl, '_blank');
+    } catch (error: any) {
+      console.error('Download failed:', error);
+      toast.error('自动下载失败，正在打开新窗口...');
+      // 浏览器已经在 downloadFile 中尝试打开了链接
     } finally {
       setIsDownloading(null);
     }
   };
 
   const handleDownloadPdf = async () => {
-    if (!task.resultPdfUrl) return;
+    if (!task.resultPdfUrl) {
+      toast.error('PDF 文件不存在');
+      return;
+    }
+    
     setIsDownloading('pdf');
+    const filename = `${task.title.replace(/[^\w\u4e00-\u9fa5]/g, '_')}.pdf`;
+    
     try {
-      await downloadFile(task.resultPdfUrl, `${task.title}.pdf`);
+      await downloadFile(task.resultPdfUrl, filename);
       toast.success('PDF 下载成功');
-    } catch (error) {
-      toast.error('下载失败，请重试');
-      // 回退到直接打开链接
-      window.open(task.resultPdfUrl, '_blank');
+    } catch (error: any) {
+      console.error('PDF download failed:', error);
+      toast.error('自动下载失败，正在打开新窗口...');
     } finally {
       setIsDownloading(null);
     }
+  };
+  
+  // 直接链接下载（备用）
+  const handleDirectDownload = (url: string, type: 'pptx' | 'pdf') => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${task.title}.${type}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.info('已在新窗口打开下载链接');
   };
 
   return (
@@ -805,6 +850,16 @@ export default function TaskDetail() {
                             下载 PDF
                           </Button>
                         )}
+                        {/* 备用下载链接 */}
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDirectDownload(task.resultPptxUrl!, 'pptx')}
+                          className="text-muted-foreground"
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          直接打开
+                        </Button>
                       </>
                     ) : (
                       <Button 

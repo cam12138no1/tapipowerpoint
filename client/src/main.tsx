@@ -4,24 +4,37 @@ import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
+import { SimpleAuthProvider } from "./contexts/SimpleAuthContext";
 import "./index.css";
 
 const STORAGE_KEY = 'pptmaster_user';
+const TOKEN_KEY = 'pptmaster_token';
 
-// Get user from localStorage
-function getStoredUser(): { name: string; openId: string } | null {
+// Get auth info from localStorage
+function getStoredAuth(): { user: { name: string; openId: string } | null; token: string | null } {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
+    const token = localStorage.getItem(TOKEN_KEY);
+    return {
+      user: stored ? JSON.parse(stored) : null,
+      token,
+    };
   } catch (e) {
-    // ignore
+    return { user: null, token: null };
   }
-  return null;
 }
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 30000, // 30 seconds
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
 
 const trpcClient = trpc.createClient({
   links: [
@@ -29,15 +42,21 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers() {
-        const user = getStoredUser();
-        if (user) {
-          // Encode non-ASCII characters to avoid header encoding issues
-          return {
-            'x-username': encodeURIComponent(user.name),
-            'x-user-openid': encodeURIComponent(user.openId),
-          };
+        const { user, token } = getStoredAuth();
+        const headers: Record<string, string> = {};
+        
+        // Prefer JWT token
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
         }
-        return {};
+        
+        // Also send legacy headers for backward compatibility
+        if (user) {
+          headers['x-username'] = encodeURIComponent(user.name);
+          headers['x-user-openid'] = encodeURIComponent(user.openId);
+        }
+        
+        return headers;
       },
       fetch(input, init) {
         return globalThis.fetch(input, {
@@ -52,7 +71,9 @@ const trpcClient = trpc.createClient({
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <SimpleAuthProvider>
+        <App />
+      </SimpleAuthProvider>
     </QueryClientProvider>
   </trpc.Provider>
 );

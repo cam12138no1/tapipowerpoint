@@ -6,6 +6,13 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 vi.mock("./db", () => ({
   getUserByOpenId: vi.fn(),
   upsertUser: vi.fn(),
+  getOrCreateUser: vi.fn(),
+}));
+
+// Mock the auth module
+vi.mock("./_core/auth", () => ({
+  verifyToken: vi.fn().mockResolvedValue(null),
+  extractToken: vi.fn().mockReturnValue(null),
 }));
 
 import * as db from "./db";
@@ -31,6 +38,7 @@ describe("Simple Username Authentication", () => {
     const mockReq = {
       headers: {
         'x-username': 'testuser',
+        cookie: '',
       },
     } as CreateExpressContextOptions["req"];
     
@@ -45,6 +53,7 @@ describe("Simple Username Authentication", () => {
     const mockReq = {
       headers: {
         'x-user-openid': 'test_openid_123',
+        cookie: '',
       },
     } as CreateExpressContextOptions["req"];
     
@@ -68,16 +77,14 @@ describe("Simple Username Authentication", () => {
       lastSignedIn: new Date(),
     };
 
-    // First call returns undefined (user not found), second call returns the created user
-    vi.mocked(db.getUserByOpenId)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(mockUser);
-    vi.mocked(db.upsertUser).mockResolvedValue();
+    // getOrCreateUser returns the created user
+    vi.mocked(db.getOrCreateUser).mockResolvedValue(mockUser);
 
     const mockReq = {
       headers: {
         'x-username': 'Test User',
         'x-user-openid': 'test_openid_123',
+        cookie: '',
       },
     } as CreateExpressContextOptions["req"];
     
@@ -85,15 +92,11 @@ describe("Simple Username Authentication", () => {
 
     const context = await createContext({ req: mockReq, res: mockRes });
     
-    expect(db.upsertUser).toHaveBeenCalledWith({
-      openId: 'test_openid_123',
-      name: 'Test User',
-      lastSignedIn: expect.any(Date),
-    });
+    expect(db.getOrCreateUser).toHaveBeenCalledWith('test_openid_123', 'Test User');
     expect(context.user).toEqual(mockUser);
   });
 
-  it("should return existing user and update lastSignedIn", async () => {
+  it("should return existing user when headers provided", async () => {
     const mockUser = {
       id: 1,
       openId: 'existing_openid',
@@ -106,13 +109,13 @@ describe("Simple Username Authentication", () => {
       lastSignedIn: new Date(),
     };
 
-    vi.mocked(db.getUserByOpenId).mockResolvedValue(mockUser);
-    vi.mocked(db.upsertUser).mockResolvedValue();
+    vi.mocked(db.getOrCreateUser).mockResolvedValue(mockUser);
 
     const mockReq = {
       headers: {
         'x-username': 'Existing User',
         'x-user-openid': 'existing_openid',
+        cookie: '',
       },
     } as CreateExpressContextOptions["req"];
     
@@ -120,20 +123,18 @@ describe("Simple Username Authentication", () => {
 
     const context = await createContext({ req: mockReq, res: mockRes });
     
-    expect(db.upsertUser).toHaveBeenCalledWith({
-      openId: 'existing_openid',
-      lastSignedIn: expect.any(Date),
-    });
+    expect(db.getOrCreateUser).toHaveBeenCalledWith('existing_openid', 'Existing User');
     expect(context.user).toEqual(mockUser);
   });
 
   it("should handle database errors gracefully", async () => {
-    vi.mocked(db.getUserByOpenId).mockRejectedValue(new Error("Database error"));
+    vi.mocked(db.getOrCreateUser).mockRejectedValue(new Error("Database error"));
 
     const mockReq = {
       headers: {
         'x-username': 'Test User',
         'x-user-openid': 'test_openid',
+        cookie: '',
       },
     } as CreateExpressContextOptions["req"];
     

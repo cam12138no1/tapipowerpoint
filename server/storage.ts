@@ -143,7 +143,17 @@ async function buildDownloadUrl(
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
   });
-  return (await response.json()).url;
+  
+  if (!response.ok) {
+    const message = await response.text().catch(() => response.statusText);
+    throw new Error(`Failed to get download URL (${response.status}): ${message}`);
+  }
+  
+  const data = await response.json();
+  if (!data?.url) {
+    throw new Error('Invalid response: missing url field');
+  }
+  return data.url;
 }
 
 function ensureTrailingSlash(value: string): string {
@@ -185,8 +195,12 @@ async function forgePut(
       `Storage upload failed (${response.status} ${response.statusText}): ${message}`
     );
   }
-  const url = (await response.json()).url;
-  return { key, url };
+  
+  const responseData = await response.json();
+  if (!responseData?.url) {
+    throw new Error('Invalid upload response: missing url field');
+  }
+  return { key, url: responseData.url };
 }
 
 async function forgeGet(relKey: string): Promise<{ key: string; url: string }> {

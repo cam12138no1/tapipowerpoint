@@ -42,21 +42,32 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
 }
 
 describe("auth.logout", () => {
-  it("clears the session cookie and reports success", async () => {
+  it("clears all auth cookies and reports success", async () => {
     const { ctx, clearedCookies } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.auth.logout();
 
     expect(result).toEqual({ success: true });
-    expect(clearedCookies).toHaveLength(1);
-    expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
-    expect(clearedCookies[0]?.options).toMatchObject({
+    // Logout now clears both the session cookie and the JWT auth token
+    expect(clearedCookies).toHaveLength(2);
+    
+    // Check session cookie
+    const sessionCookie = clearedCookies.find(c => c.name === COOKIE_NAME);
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie?.options).toMatchObject({
       maxAge: -1,
       secure: true,
       sameSite: "none",
       httpOnly: true,
       path: "/",
+    });
+    
+    // Check JWT auth token cookie
+    const authTokenCookie = clearedCookies.find(c => c.name === 'auth_token');
+    expect(authTokenCookie).toBeDefined();
+    expect(authTokenCookie?.options).toMatchObject({
+      maxAge: -1,
     });
   });
 });

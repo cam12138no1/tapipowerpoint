@@ -1,6 +1,8 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import { verifyToken, extractToken } from "./auth";
+import cookie from "cookie";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -14,23 +16,40 @@ export async function createContext(
   let user: User | null = null;
 
   try {
-    // Simple username authentication via header
-    const rawUsername = opts.req.headers['x-username'] as string | undefined;
-    const rawOpenId = opts.req.headers['x-user-openid'] as string | undefined;
+    // Method 1: JWT token authentication (preferred)
+    const cookies = cookie.parse(opts.req.headers.cookie || '');
+    const token = extractToken(opts.req.headers as Record<string, string>, cookies);
     
-    // Decode URL-encoded values
-    const username = rawUsername ? decodeURIComponent(rawUsername) : undefined;
-    const userOpenId = rawOpenId ? decodeURIComponent(rawOpenId) : undefined;
+    if (token) {
+      const payload = await verifyToken(token);
+      if (payload) {
+        // Get user from database using the verified token data
+        const foundUser = await db.getUserByOpenId(payload.openId);
+        if (foundUser) {
+          user = foundUser as User;
+        }
+      }
+    }
     
-    if (username && userOpenId) {
-      // Use getOrCreateUser which handles both DB and memory store
-      const foundUser = await db.getOrCreateUser(userOpenId, username);
-      if (foundUser) {
-        user = foundUser as User;
+    // Method 2: Simple header authentication (backward compatibility)
+    // Only used if JWT auth didn't work
+    if (!user) {
+      const rawUsername = opts.req.headers['x-username'] as string | undefined;
+      const rawOpenId = opts.req.headers['x-user-openid'] as string | undefined;
+      
+      if (rawUsername && rawOpenId) {
+        const username = decodeURIComponent(rawUsername);
+        const userOpenId = decodeURIComponent(rawOpenId);
+        
+        // Create or get user
+        const foundUser = await db.getOrCreateUser(userOpenId, username);
+        if (foundUser) {
+          user = foundUser as User;
+        }
       }
     }
   } catch (error) {
-    console.error("[Auth] Error in simple auth:", error);
+    console.error("[Auth] Error in authentication:", error);
     user = null;
   }
 
