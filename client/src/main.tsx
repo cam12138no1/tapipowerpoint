@@ -10,6 +10,20 @@ import "./index.css";
 const STORAGE_KEY = 'pptmaster_user';
 const TOKEN_KEY = 'pptmaster_token';
 
+function injectAnalyticsScript() {
+  const endpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT as string | undefined;
+  const websiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID as string | undefined;
+
+  if (!endpoint || !websiteId) return;
+
+  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+  const script = document.createElement("script");
+  script.defer = true;
+  script.src = `${normalizedEndpoint}/umami`;
+  script.setAttribute("data-website-id", websiteId);
+  document.body.appendChild(script);
+}
+
 // Get auth info from localStorage
 function getStoredAuth(): { user: { name: string; openId: string } | null; token: string | null } {
   try {
@@ -67,6 +81,8 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+injectAnalyticsScript();
 
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>

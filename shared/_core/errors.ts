@@ -116,3 +116,13 @@ export function toAppError(error: unknown): AppError {
   
   return new AppError(ERROR_CODES.INTERNAL_ERROR);
 }
+
+/**
+ * Create a forbidden error (403)
+ */
+export function ForbiddenError(
+  message?: string,
+  details?: Record<string, any>
+): AppError {
+  return new AppError(ERROR_CODES.FORBIDDEN, message, details);
+}
