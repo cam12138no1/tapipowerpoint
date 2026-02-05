@@ -31,7 +31,7 @@ export function sanitizeTaskForFrontend(task: PptTask): PptTask {
   const sanitized = { ...task };
   
   // Parse and clean interactionData
-  if (task.interactionData) {
+  if (task.interactionData && task.interactionData.trim().length > 0) {
     try {
       const data = JSON.parse(task.interactionData);
       
@@ -53,6 +53,9 @@ export function sanitizeTaskForFrontend(task: PptTask): PptTask {
       console.warn('[Sanitizer] Failed to parse interactionData:', error);
       sanitized.interactionData = null;
     }
+  } else {
+    // Empty or null - set to null
+    sanitized.interactionData = null;
   }
   
   // Remove any other internal fields
