@@ -289,22 +289,27 @@ class PPTEngineClient {
     pptxFile: { url: string; filename: string } | null;
     pdfFile: { url: string; filename: string } | null;
   } {
+    console.log('[PPTEngine] Extracting files from response...');
     const attachments: FileAttachment[] = [];
     let pptxFile: { url: string; filename: string } | null = null;
     let pdfFile: { url: string; filename: string } | null = null;
 
     // Method 1: Check top-level attachments
     if (Array.isArray(data.attachments)) {
+      console.log(`[PPTEngine] Method 1: Checking ${data.attachments.length} top-level attachments`);
       for (const att of data.attachments) {
         const url = extractFileUrl(att);
         const filename = extractFileName(att);
+        console.log(`[PPTEngine] - Attachment: ${filename} -> ${url ? url.substring(0, 60) + '...' : 'no url'}`);
         if (url && filename) {
           attachments.push({ filename, url });
           if (isPptxFile(filename) && !pptxFile) {
             pptxFile = { url, filename };
+            console.log(`[PPTEngine] ✓ Found PPTX in top-level: ${filename}`);
           }
           if (isPdfFile(filename) && !pdfFile) {
             pdfFile = { url, filename };
+            console.log(`[PPTEngine] ✓ Found PDF in top-level: ${filename}`);
           }
         }
       }
@@ -312,52 +317,107 @@ class PPTEngineClient {
 
     // Method 2: Search in output messages (reverse order for latest first)
     if (Array.isArray(data.output)) {
+      console.log(`[PPTEngine] Method 2: Searching in ${data.output.length} output messages`);
       for (let i = data.output.length - 1; i >= 0; i--) {
         const msg = data.output[i];
-        if (msg.role !== 'assistant' || !Array.isArray(msg.content)) continue;
+        if (msg.role !== 'assistant') continue;
+        
+        if (!Array.isArray(msg.content)) {
+          console.log(`[PPTEngine] - Message ${i}: content is not array, type=${typeof msg.content}`);
+          continue;
+        }
 
+        console.log(`[PPTEngine] - Message ${i}: ${msg.content.length} content items`);
         for (const item of msg.content) {
+          console.log(`[PPTEngine]   - Content type: ${item.type}`);
           if (item.type === 'output_file') {
             const url = extractFileUrl(item);
             const filename = extractFileName(item);
+            console.log(`[PPTEngine]     File: ${filename} -> ${url ? url.substring(0, 60) + '...' : 'no url'}`);
             if (url && filename) {
               attachments.push({ filename, url });
               if (isPptxFile(filename) && !pptxFile) {
                 pptxFile = { url, filename };
-                console.log(`[PPTEngine] Found PPTX in output: ${filename}`);
+                console.log(`[PPTEngine] ✓ Found PPTX in output: ${filename}`);
               }
               if (isPdfFile(filename) && !pdfFile) {
                 pdfFile = { url, filename };
-                console.log(`[PPTEngine] Found PDF in output: ${filename}`);
+                console.log(`[PPTEngine] ✓ Found PDF in output: ${filename}`);
               }
             }
           }
         }
         
-        // Stop searching once we found files
+        // Stop searching once we found PPTX
         if (pptxFile) break;
       }
     }
 
-    // Method 3: Search raw output string for URLs (last resort)
+    // Method 3: Check for files field at root level (Manus specific)
+    if (!pptxFile && data.files && Array.isArray(data.files)) {
+      console.log(`[PPTEngine] Method 3: Checking ${data.files.length} root-level files`);
+      for (const file of data.files) {
+        const url = extractFileUrl(file);
+        const filename = extractFileName(file);
+        console.log(`[PPTEngine] - File: ${filename} -> ${url ? url.substring(0, 60) + '...' : 'no url'}`);
+        if (url && filename) {
+          if (isPptxFile(filename) && !pptxFile) {
+            pptxFile = { url, filename };
+            console.log(`[PPTEngine] ✓ Found PPTX in files: ${filename}`);
+          }
+          if (isPdfFile(filename) && !pdfFile) {
+            pdfFile = { url, filename };
+            console.log(`[PPTEngine] ✓ Found PDF in files: ${filename}`);
+          }
+        }
+      }
+    }
+
+    // Method 4: Search raw output string for URLs (last resort)
     if (!pptxFile && data.output) {
+      console.log('[PPTEngine] Method 4: Searching raw output string for URLs');
       const rawStr = JSON.stringify(data.output);
       
-      // Look for PPTX URLs
-      const pptxMatch = rawStr.match(/(https?:\/\/[^"\s]+\.pptx[^"\s]*)/i);
-      if (pptxMatch) {
-        console.log('[PPTEngine] Found PPTX URL in raw output');
-        pptxFile = { url: pptxMatch[1], filename: 'presentation.pptx' };
+      // Look for PPTX URLs with various patterns
+      const pptxPatterns = [
+        /(https?:\/\/[^"\s]+\.pptx[^"\s]*)/i,
+        /(https?:\/\/[^"\s]+\/[^"\s]*pptx[^"\s]*)/i,
+      ];
+      
+      for (const pattern of pptxPatterns) {
+        const match = rawStr.match(pattern);
+        if (match) {
+          console.log(`[PPTEngine] ✓ Found PPTX URL in raw output: ${match[1].substring(0, 80)}...`);
+          pptxFile = { url: match[1], filename: 'presentation.pptx' };
+          break;
+        }
       }
       
       // Look for PDF URLs
       if (!pdfFile) {
         const pdfMatch = rawStr.match(/(https?:\/\/[^"\s]+\.pdf[^"\s]*)/i);
         if (pdfMatch) {
-          console.log('[PPTEngine] Found PDF URL in raw output');
+          console.log(`[PPTEngine] ✓ Found PDF URL in raw output: ${pdfMatch[1].substring(0, 80)}...`);
           pdfFile = { url: pdfMatch[1], filename: 'presentation.pdf' };
         }
       }
+    }
+
+    // Method 5: Check share_url or task_url (emergency fallback)
+    if (!pptxFile && (data.share_url || data.task_url)) {
+      const shareUrl = data.share_url || data.task_url;
+      console.log(`[PPTEngine] Method 5: Emergency fallback - using share URL: ${shareUrl}`);
+      // Note: This is just a link to the task, not a direct file download
+      // But we log it for debugging
+    }
+
+    // Final status
+    if (pptxFile) {
+      console.log(`[PPTEngine] SUCCESS: PPTX file found - ${pptxFile.filename}`);
+    } else {
+      console.error('[PPTEngine] ERROR: No PPTX file found in response');
+      console.error('[PPTEngine] Response keys:', Object.keys(data));
+      console.error('[PPTEngine] Output type:', Array.isArray(data.output) ? `array[${data.output.length}]` : typeof data.output);
     }
 
     return { attachments, pptxFile, pdfFile };

@@ -1,0 +1,118 @@
+---
+description: TypeScript coding standards and best practices
+globs: "**/*.ts,**/*.tsx"
+alwaysApply: false
+---
+
+# TypeScript Standards
+
+## Error Handling
+
+Always handle errors explicitly with proper logging:
+
+```typescript
+// ❌ BAD - Silent error swallowing
+try {
+  await fetchData();
+} catch (e) {}
+
+// ❌ BAD - Generic error handling
+try {
+  await fetchData();
+} catch (e) {
+  console.log('Error:', e);
+}
+
+// ✅ GOOD - Explicit error handling with context
+try {
+  await fetchData();
+} catch (error) {
+  logger.error('Failed to fetch user data', { 
+    error, 
+    userId, 
+    context: 'userProfile' 
+  });
+  throw new DataFetchError('Unable to retrieve user data', { cause: error });
+}
+```
+
+## Type Safety
+
+Use strict types and avoid `any`:
+
+```typescript
+// ❌ BAD - Using any
+function processData(data: any) {
+  return data.value;
+}
+
+// ✅ GOOD - Proper typing
+interface DataInput {
+  value: string;
+  timestamp: number;
+}
+
+function processData(data: DataInput): string {
+  return data.value;
+}
+```
+
+## Async/Await
+
+Always use async/await for promises:
+
+```typescript
+// ❌ BAD - Promise chains
+getData()
+  .then(data => processData(data))
+  .then(result => console.log(result));
+
+// ✅ GOOD - Async/await
+const data = await getData();
+const result = await processData(data);
+console.log(result);
+```
+
+## Function Naming
+
+Use descriptive, action-oriented names:
+
+```typescript
+// ❌ BAD - Vague names
+function handler() {}
+function proc() {}
+
+// ✅ GOOD - Clear intent
+function handleUserLogin() {}
+function processPayment() {}
+function validateEmail() {}
+```
+
+## Immutability
+
+Prefer const and immutable operations:
+
+```typescript
+// ❌ BAD - Mutation
+let users = [];
+users.push(newUser);
+
+// ✅ GOOD - Immutable
+const users = [...existingUsers, newUser];
+```
+
+## Return Types
+
+Always specify return types for functions:
+
+```typescript
+// ❌ BAD - Implicit return type
+function getUser(id: string) {
+  return db.users.findUnique({ where: { id } });
+}
+
+// ✅ GOOD - Explicit return type
+function getUser(id: string): Promise<User | null> {
+  return db.users.findUnique({ where: { id } });
+}
+```

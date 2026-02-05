@@ -32,11 +32,33 @@ const ALGORITHM = 'HS256';
  * Falls back to a default for development (NOT SECURE)
  */
 function getSecretKey(): Uint8Array {
-  const secret = ENV.cookieSecret || 'dev-secret-change-in-production';
-  if (!ENV.cookieSecret && ENV.isProduction) {
-    console.error('[Auth] WARNING: JWT_SECRET not set in production!');
+  const secret = ENV.cookieSecret;
+  
+  // Production environment MUST have JWT secret
+  if (ENV.isProduction && !secret) {
+    throw new Error(
+      'JWT_SECRET environment variable must be set in production environment. ' +
+      'Generate a secure secret: openssl rand -base64 32'
+    );
   }
-  return new TextEncoder().encode(secret);
+  
+  // Validate secret length (minimum 32 characters for security)
+  if (secret && secret.length < 32) {
+    throw new Error(
+      `JWT_SECRET must be at least 32 characters long. ` +
+      `Current length: ${secret.length}. ` +
+      `Generate a secure secret: openssl rand -base64 32`
+    );
+  }
+  
+  // Use provided secret or development-only fallback
+  const effectiveSecret = secret || 'dev-secret-only-for-local-development';
+  
+  if (!secret && !ENV.isProduction) {
+    console.warn('[Auth] WARNING: Using default JWT_SECRET for development. Set JWT_SECRET environment variable.');
+  }
+  
+  return new TextEncoder().encode(effectiveSecret);
 }
 
 // ============ Token Operations ============
@@ -100,10 +122,16 @@ export function extractToken(headers: Record<string, string | string[] | undefin
 }
 
 /**
- * Generate a simple hash for password (not for production use)
- * In production, use bcrypt or argon2
+ * Generate a simple hash for password (DEPRECATED - DO NOT USE)
+ * 
+ * @deprecated This function is INSECURE and should not be used.
+ * Use the password module instead: import { hashPassword, verifyPassword } from '../lib/password'
+ * 
+ * This function is kept only for backward compatibility with existing data.
+ * All new code should use bcrypt via the password module.
  */
 export function simpleHash(input: string): string {
+  console.warn('[Auth] simpleHash is DEPRECATED and INSECURE. Use hashPassword from lib/password instead.');
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     const char = input.charCodeAt(i);

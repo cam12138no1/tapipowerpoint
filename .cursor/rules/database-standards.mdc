@@ -1,0 +1,127 @@
+---
+description: Database schema and query best practices
+globs: "drizzle/**/*.ts,server/db.ts"
+alwaysApply: false
+---
+
+# Database Standards
+
+## Schema Design
+
+Use proper column types and constraints:
+
+```typescript
+// ✅ GOOD - Proper schema design
+export const users = pgTable('users', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  role: text('role', { enum: ['admin', 'user'] }).notNull().default('user'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Add indexes for frequently queried columns
+export const usersEmailIndex = index('users_email_idx').on(users.email);
+```
+
+## Relations
+
+Define relations properly:
+
+```typescript
+// ✅ GOOD - Explicit relations
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+  comments: many(comments),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.authorId],
+    references: [users.id],
+  }),
+}));
+```
+
+## Query Optimization
+
+Select only needed fields:
+
+```typescript
+// ❌ BAD - Selecting all fields
+const users = await db.users.findMany();
+
+// ✅ GOOD - Select specific fields
+const users = await db.users.findMany({
+  select: {
+    id: true,
+    name: true,
+    email: true,
+  },
+});
+```
+
+## Transactions
+
+Use transactions for multi-step operations:
+
+```typescript
+// ✅ GOOD - Transactional operations
+await db.transaction(async (tx) => {
+  const user = await tx.users.create({
+    data: { email, name },
+  });
+  
+  await tx.profiles.create({
+    data: { userId: user.id, bio: '' },
+  });
+  
+  return user;
+});
+```
+
+## Migrations
+
+Always create migrations for schema changes:
+
+```bash
+# Generate migration
+npm run db:generate
+
+# Apply migration
+npm run db:migrate
+```
+
+## Connection Pooling
+
+Reuse database connections:
+
+```typescript
+// ✅ GOOD - Connection pool
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+
+const queryClient = postgres(process.env.DATABASE_URL!, {
+  max: 10,
+  idle_timeout: 20,
+});
+
+export const db = drizzle(queryClient);
+```
+
+## Error Handling
+
+Handle database errors gracefully:
+
+```typescript
+// ✅ GOOD - Database error handling
+try {
+  await db.users.create({ data: userData });
+} catch (error) {
+  if (error.code === '23505') { // Unique constraint violation
+    throw new ConflictError('User with this email already exists');
+  }
+  throw new DatabaseError('Failed to create user', { cause: error });
+}
+```

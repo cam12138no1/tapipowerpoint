@@ -1,0 +1,159 @@
+---
+description: Testing standards and TDD practices
+globs: "**/*.test.ts,**/*.test.tsx"
+alwaysApply: false
+---
+
+# Testing Standards
+
+## Test-Driven Development
+
+**Always write tests before implementation code.**
+
+### Test Creation Order
+
+1. **Contract Tests** - Define interfaces and data contracts
+2. **Integration Tests** - Test component interactions
+3. **E2E Tests** - Test user flows
+4. **Unit Tests** - Test isolated functions
+
+## Test Structure
+
+Use AAA (Arrange, Act, Assert) pattern:
+
+```typescript
+// ✅ GOOD - Clear test structure
+describe('UserService', () => {
+  describe('createUser', () => {
+    it('should create a new user with valid data', async () => {
+      // Arrange
+      const userData = { name: 'John', email: 'john@example.com' };
+      
+      // Act
+      const user = await createUser(userData);
+      
+      // Assert
+      expect(user.id).toBeDefined();
+      expect(user.name).toBe('John');
+      expect(user.email).toBe('john@example.com');
+    });
+  });
+});
+```
+
+## Integration-First Testing
+
+Prefer real services over mocks:
+
+```typescript
+// ❌ BAD - Excessive mocking
+const mockDb = {
+  users: {
+    create: vi.fn(),
+  },
+};
+
+// ✅ GOOD - Real test database
+import { testDb } from './test-setup';
+
+describe('User creation', () => {
+  beforeEach(async () => {
+    await testDb.reset();
+  });
+  
+  it('should persist user to database', async () => {
+    const user = await createUser({ name: 'John' });
+    const found = await testDb.users.findUnique({ where: { id: user.id } });
+    expect(found).toBeDefined();
+  });
+});
+```
+
+## Test Naming
+
+Use descriptive test names that explain behavior:
+
+```typescript
+// ❌ BAD - Vague test names
+it('works', () => {});
+it('test user', () => {});
+
+// ✅ GOOD - Descriptive names
+it('should create user with valid email', () => {});
+it('should throw error when email is invalid', () => {});
+it('should return null when user not found', () => {});
+```
+
+## Error Testing
+
+Always test error scenarios:
+
+```typescript
+// ✅ GOOD - Testing both success and failure
+describe('fetchUser', () => {
+  it('should return user when found', async () => {
+    const user = await fetchUser('existing-id');
+    expect(user).toBeDefined();
+  });
+  
+  it('should throw NotFoundError when user does not exist', async () => {
+    await expect(fetchUser('invalid-id'))
+      .rejects
+      .toThrow(NotFoundError);
+  });
+  
+  it('should throw DatabaseError on connection failure', async () => {
+    await testDb.disconnect();
+    await expect(fetchUser('any-id'))
+      .rejects
+      .toThrow(DatabaseError);
+  });
+});
+```
+
+## Test Coverage Requirements
+
+- All public functions must have tests
+- All error paths must be tested
+- All edge cases must be covered
+- Critical paths require integration tests
+
+## Mock Usage Guidelines
+
+Only mock external dependencies:
+
+```typescript
+// ✅ GOOD - Mock external API
+vi.mock('stripe', () => ({
+  createCharge: vi.fn(),
+}));
+
+// ❌ BAD - Mocking internal logic
+vi.mock('./user-service', () => ({
+  createUser: vi.fn(),
+}));
+```
+
+## Test Data
+
+Use factories for consistent test data:
+
+```typescript
+// ✅ GOOD - Test data factory
+function createTestUser(overrides = {}) {
+  return {
+    id: nanoid(),
+    name: 'Test User',
+    email: 'test@example.com',
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+describe('User tests', () => {
+  it('should handle admin users', () => {
+    const admin = createTestUser({ role: 'admin' });
+    // test with admin
+  });
+});
+```

@@ -1,0 +1,133 @@
+---
+description: React component patterns and conventions
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# React Component Patterns
+
+## Component Structure
+
+Use functional components with clear separation of concerns:
+
+```tsx
+// ❌ BAD - Mixed concerns
+function UserProfile() {
+  const [user, setUser] = useState(null);
+  
+  useEffect(() => {
+    fetch('/api/user').then(r => r.json()).then(setUser);
+  }, []);
+  
+  if (!user) return <div>Loading...</div>;
+  
+  return <div>{user.name}</div>;
+}
+
+// ✅ GOOD - Separated concerns
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user, isLoading } = useUser(userId);
+  
+  if (isLoading) return <UserProfileSkeleton />;
+  if (!user) return <UserNotFound />;
+  
+  return <UserProfileContent user={user} />;
+}
+```
+
+## Custom Hooks
+
+Extract reusable logic into custom hooks:
+
+```tsx
+// ✅ GOOD - Custom hook for data fetching
+function useUser(userId: string) {
+  return useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+}
+```
+
+## Props Interface
+
+Always define props interfaces:
+
+```tsx
+// ❌ BAD - Inline types
+function Button({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button onClick={onClick}>{label}</button>;
+}
+
+// ✅ GOOD - Defined interface
+interface ButtonProps {
+  label: string;
+  onClick: () => void;
+  variant?: 'primary' | 'secondary';
+}
+
+function Button({ label, onClick, variant = 'primary' }: ButtonProps) {
+  return <button onClick={onClick} className={variant}>{label}</button>;
+}
+```
+
+## Component Files
+
+Keep related components in the same file when small:
+
+```tsx
+// ✅ GOOD - Related components together
+function UserCard({ user }: UserCardProps) {
+  return (
+    <Card>
+      <UserAvatar user={user} />
+      <UserInfo user={user} />
+    </Card>
+  );
+}
+
+function UserAvatar({ user }: { user: User }) {
+  return <img src={user.avatar} alt={user.name} />;
+}
+
+function UserInfo({ user }: { user: User }) {
+  return (
+    <div>
+      <h3>{user.name}</h3>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+## Error Boundaries
+
+Wrap components with error boundaries:
+
+```tsx
+// ✅ GOOD - Error boundary usage
+function App() {
+  return (
+    <ErrorBoundary fallback={<ErrorFallback />}>
+      <MainContent />
+    </ErrorBoundary>
+  );
+}
+```
+
+## Loading States
+
+Always handle loading and error states:
+
+```tsx
+// ✅ GOOD - Complete state handling
+function DataDisplay() {
+  const { data, isLoading, error } = useData();
+  
+  if (isLoading) return <Skeleton />;
+  if (error) return <ErrorDisplay error={error} />;
+  if (!data) return <EmptyState />;
+  
+  return <DataContent data={data} />;
+}
+```

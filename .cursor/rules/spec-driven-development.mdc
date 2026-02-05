@@ -1,0 +1,159 @@
+---
+description: Core Spec-Driven Development principles for this project
+alwaysApply: true
+---
+
+# Spec-Driven Development (SDD) Principles
+
+## Core Philosophy
+
+Specifications are the source of truth, and code serves specifications.
+
+### 1. Intent-Driven Development
+
+- Focus on **WHAT** and **WHY** before **HOW**
+- Write specifications that define requirements before implementation
+- Maintain natural language specifications as primary artifacts
+
+### 2. Executable Specifications
+
+- Specifications must be precise, complete, and unambiguous
+- Every technical choice should trace back to specific requirements
+- Update specifications when requirements change, then regenerate code
+
+### 3. Test-First Development
+
+**NON-NEGOTIABLE: All implementation MUST follow strict Test-Driven Development**
+
+```typescript
+// ❌ BAD - Writing implementation before tests
+export function processData(data: unknown) {
+  // implementation...
+}
+
+// ✅ GOOD - Writing tests first
+describe('processData', () => {
+  it('should handle valid data', () => {
+    // Test BEFORE implementation
+  });
+});
+```
+
+**Test Creation Order:**
+1. Write contract/interface tests
+2. Write integration tests
+3. Write e2e tests
+4. Write unit tests
+5. Create implementation to make tests pass
+
+### 4. Library-First Principle
+
+Every feature should begin as a standalone, reusable component:
+
+```typescript
+// ❌ BAD - Direct implementation in application
+function handleUserLogin() {
+  // login logic mixed with UI
+}
+
+// ✅ GOOD - Reusable library approach
+// lib/auth/login.ts
+export function createLoginHandler(options: LoginOptions) {
+  // Pure, reusable login logic
+}
+```
+
+### 5. Simplicity and Anti-Abstraction
+
+- **Maximum 3 projects/modules** for initial implementation
+- Use framework features directly rather than wrapping them
+- No speculative "might need" features
+- Justify every layer of complexity
+
+```typescript
+// ❌ BAD - Unnecessary abstraction
+class DataAccessLayer {
+  private repository: Repository;
+  async get(id: string) {
+    return this.repository.find(id);
+  }
+}
+
+// ✅ GOOD - Use ORM directly
+const user = await db.users.findUnique({ where: { id } });
+```
+
+### 6. Integration-First Testing
+
+Prefer real environments over mocks:
+
+```typescript
+// ❌ BAD - Excessive mocking
+const mockDb = { findUser: vi.fn() };
+
+// ✅ GOOD - Real database for integration tests
+import { db } from './test-db';
+const user = await db.users.create({ data: testUser });
+```
+
+### 7. CLI Interface Mandate
+
+All libraries must expose functionality through CLI for observability:
+
+```typescript
+// lib/feature/cli.ts
+export async function main(args: string[]) {
+  const input = JSON.parse(args[0]);
+  const result = await processFeature(input);
+  console.log(JSON.stringify(result));
+}
+```
+
+## Development Workflow
+
+### Phase 1: Constitution
+Establish project principles and architectural guidelines first.
+
+### Phase 2: Specification
+Create functional specifications using `/speckit.specify`:
+- Define user stories and acceptance criteria
+- Mark ambiguities with `[NEEDS CLARIFICATION]`
+- Focus on WHAT, not HOW
+
+### Phase 3: Clarification
+Use `/speckit.clarify` to resolve ambiguities before planning.
+
+### Phase 4: Technical Planning
+Generate implementation plans with `/speckit.plan`:
+- Specify tech stack and architecture
+- Create data models and API contracts
+- Document research and decisions
+
+### Phase 5: Task Breakdown
+Generate executable tasks with `/speckit.tasks`.
+
+### Phase 6: Implementation
+Execute with `/speckit.implement`, following TDD strictly.
+
+## Quality Checklist
+
+Before considering any feature complete:
+
+- [ ] Specification exists and has no `[NEEDS CLARIFICATION]` markers
+- [ ] All requirements are testable and measurable
+- [ ] Tests written before implementation
+- [ ] All tests pass
+- [ ] No abstraction layers without documented justification
+- [ ] Using ≤3 modules/projects
+- [ ] Integration tests use real services (not mocks)
+- [ ] CLI interface exists for the feature
+- [ ] Code traces back to specific requirements
+
+## Review Process
+
+When reviewing code:
+1. Check if specification exists
+2. Verify tests were written first
+3. Confirm implementation matches specification
+4. Look for unnecessary abstractions
+5. Validate integration-first testing approach

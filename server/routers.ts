@@ -9,6 +9,8 @@ import * as db from "./db";
 import { pptEngine, getMimeType, buildPPTPrompt, DesignSpec, PPTEngineError } from "./ppt-engine";
 import { storagePut, storageGet } from "./storage";
 import { nanoid } from "nanoid";
+import { downloadFileWithRetry as downloadFileLib, validateFileBuffer } from "./lib/file-operations";
+import { sanitizeTaskForFrontend, sanitizeTasksForFrontend } from "./lib/task-sanitizer";
 
 // ============ Configuration ============
 const CONFIG = {
@@ -20,31 +22,35 @@ const CONFIG = {
 // ============ Helper Functions ============
 
 /**
- * Download file with timeout and retry
+ * Download file with timeout and retry (wrapper)
+ * @deprecated Use downloadFileLib from lib/file-operations instead
  */
 async function downloadFileWithRetry(
   url: string,
   maxRetries: number = 3
 ): Promise<Buffer | null> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), CONFIG.FILE_DOWNLOAD_TIMEOUT);
-      
-      const response = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      return Buffer.from(await response.arrayBuffer());
-    } catch (error: any) {
-      console.warn(`[Download] Attempt ${attempt}/${maxRetries} failed:`, error.message);
-      if (attempt === maxRetries) return null;
-      await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+  const result = await downloadFileLib({
+    url,
+    timeout: CONFIG.FILE_DOWNLOAD_TIMEOUT,
+    maxRetries,
+  });
+  
+  if (result.success && result.buffer) {
+    // Validate the downloaded file
+    const filename = url.split('/').pop() || 'unknown';
+    const validation = validateFileBuffer(result.buffer, filename, {
+      maxSizeMB: 100, // Allow larger downloads from engine
+    });
+    
+    if (!validation.valid) {
+      console.error(`[Download] File validation failed: ${validation.error}`);
+      return null;
     }
+    
+    return result.buffer;
   }
+  
+  console.error(`[Download] Failed after ${result.attempts} attempts: ${result.error}`);
   return null;
 }
 
@@ -86,14 +92,14 @@ const projectRouter = router({
 
   create: protectedProcedure
     .input(z.object({
-      name: z.string().min(1),
-      designSpec: z.string().optional(),
-      primaryColor: z.string().default("#0c87eb"),
-      secondaryColor: z.string().default("#737373"),
-      accentColor: z.string().default("#10b981"),
-      fontFamily: z.string().default("微软雅黑"),
-      logoUrl: z.string().optional(),
-      logoFileKey: z.string().optional(),
+      name: z.string().min(1).max(100),
+      designSpec: z.string().max(5000).optional(),
+      primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "颜色格式必须为 #RRGGBB").default("#0c87eb"),
+      secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "颜色格式必须为 #RRGGBB").default("#737373"),
+      accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "颜色格式必须为 #RRGGBB").default("#10b981"),
+      fontFamily: z.string().min(1).max(100).default("微软雅黑"),
+      logoUrl: z.string().url("Logo URL 格式不正确").optional(),
+      logoFileKey: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Build design specification instruction
@@ -129,15 +135,15 @@ const projectRouter = router({
 
   update: protectedProcedure
     .input(z.object({
-      id: z.number(),
-      name: z.string().min(1).optional(),
-      designSpec: z.string().optional(),
-      primaryColor: z.string().optional(),
-      secondaryColor: z.string().optional(),
-      accentColor: z.string().optional(),
-      fontFamily: z.string().optional(),
-      logoUrl: z.string().optional(),
-      logoFileKey: z.string().optional(),
+      id: z.number().positive(),
+      name: z.string().min(1).max(100).optional(),
+      designSpec: z.string().max(5000).optional(),
+      primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "颜色格式必须为 #RRGGBB").optional(),
+      secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "颜色格式必须为 #RRGGBB").optional(),
+      accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "颜色格式必须为 #RRGGBB").optional(),
+      fontFamily: z.string().min(1).max(100).optional(),
+      logoUrl: z.string().url("Logo URL 格式不正确").optional(),
+      logoFileKey: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.id);
@@ -173,7 +179,9 @@ const taskRouter = router({
         return { ...task, project };
       })
     );
-    return enrichedTasks;
+    // 🔒 SECURITY: Sanitize tasks before sending to frontend
+    // This removes internal debug URLs and sensitive information
+    return sanitizeTasksForFrontend(enrichedTasks as any[]);
   }),
 
   get: protectedProcedure
@@ -184,7 +192,9 @@ const taskRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
       }
       // Return flattened structure: { ...task, project } for frontend compatibility
-      return { ...taskWithProject.task, project: taskWithProject.project };
+      const combined = { ...taskWithProject.task, project: taskWithProject.project };
+      // 🔒 SECURITY: Sanitize task before sending to frontend
+      return sanitizeTaskForFrontend(combined as any);
     }),
 
   create: protectedProcedure
@@ -344,6 +354,15 @@ const taskRouter = router({
         switch (engineTask.status) {
           case "completed": {
             console.log(`[Task ${input.taskId}] Engine completed, processing files...`);
+            console.log(`[Task ${input.taskId}] Raw engine task data:`, JSON.stringify({
+              id: engineTask.id,
+              status: engineTask.status,
+              pptxFile: engineTask.pptxFile,
+              pdfFile: engineTask.pdfFile,
+              attachmentsCount: engineTask.attachments?.length || 0,
+              outputType: Array.isArray(engineTask.output) ? 'array' : typeof engineTask.output,
+              outputLength: Array.isArray(engineTask.output) ? engineTask.output.length : 0,
+            }));
             
             let resultPptxUrl: string | undefined;
             let resultPdfUrl: string | undefined;
@@ -351,8 +370,11 @@ const taskRouter = router({
             // Use the improved file extraction from ppt-engine
             if (engineTask.pptxFile?.url) {
               console.log(`[Task ${input.taskId}] Found PPTX file: ${engineTask.pptxFile.filename}`);
+              console.log(`[Task ${input.taskId}] PPTX URL: ${engineTask.pptxFile.url}`);
+              
               const buffer = await downloadFileWithRetry(engineTask.pptxFile.url);
               if (buffer) {
+                console.log(`[Task ${input.taskId}] Successfully downloaded PPTX, size: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
                 resultPptxUrl = await storeFileToS3(
                   buffer,
                   ctx.user.id,
@@ -361,11 +383,15 @@ const taskRouter = router({
                   'pptx',
                   'application/vnd.openxmlformats-officedocument.presentationml.presentation'
                 );
+                console.log(`[Task ${input.taskId}] Stored to S3: ${resultPptxUrl}`);
               } else {
                 // Fall back to direct URL if download fails
-                console.warn(`[Task ${input.taskId}] Using direct URL for PPTX`);
+                console.warn(`[Task ${input.taskId}] Download failed, using direct URL for PPTX`);
                 resultPptxUrl = engineTask.pptxFile.url;
               }
+            } else {
+              console.warn(`[Task ${input.taskId}] No PPTX file found in engineTask response`);
+              console.warn(`[Task ${input.taskId}] Available keys:`, Object.keys(engineTask));
             }
             
             if (engineTask.pdfFile?.url) {
@@ -386,7 +412,7 @@ const taskRouter = router({
             }
             
             if (resultPptxUrl) {
-              console.log(`[Task ${input.taskId}] Success! PPTX URL: ${resultPptxUrl.substring(0, 80)}...`);
+              console.log(`[Task ${input.taskId}] ✓ SUCCESS! PPTX URL: ${resultPptxUrl.substring(0, 80)}...`);
               await db.updatePptTask(input.taskId, {
                 status: "completed",
                 currentStep: "生成完成！",
@@ -401,20 +427,48 @@ const taskRouter = router({
               const retryData = JSON.parse(task.interactionData || '{"retryCount":0}');
               const currentRetry = (retryData.retryCount || 0) + 1;
               
-              console.warn(`[Task ${input.taskId}] No PPTX found, retry ${currentRetry}/${CONFIG.MAX_POLL_RETRIES}`);
+              console.warn(`[Task ${input.taskId}] ⚠️  No PPTX found, retry ${currentRetry}/${CONFIG.MAX_POLL_RETRIES}`);
+              
+              // Log debug information (server-side only, never expose to user)
+              if (engineTask.share_url || engineTask.task_url) {
+                console.log(`[Task ${input.taskId}] Internal debug URL: ${engineTask.share_url || engineTask.task_url}`);
+                console.log(`[Task ${input.taskId}] ⚠️  This URL is for debugging only, do NOT expose to end users`);
+              }
               
               if (currentRetry >= CONFIG.MAX_POLL_RETRIES) {
+                // Build user-friendly error message (NO external URLs!)
+                let errorMessage = "PPT 生成完成但文件导出失败";
+                let errorDetails = "系统已自动尝试多次导出，但未成功。\n\n";
+                errorDetails += "可能原因：\n";
+                errorDetails += "• AI 生成过程中出现异常\n";
+                errorDetails += "• 临时网络问题导致文件传输失败\n";
+                errorDetails += "• 服务器处理队列繁忙\n\n";
+                errorDetails += "建议操作：\n";
+                errorDetails += "1. 点击「重试」按钮重新生成\n";
+                errorDetails += "2. 如果多次失败，请尝试简化内容后重试\n";
+                errorDetails += "3. 如持续失败，请联系技术支持并提供任务 ID";
+                
+                // Store internal debug info (never shown to user)
+                const internalDebugInfo = {
+                  error: "file_not_found",
+                  retries: currentRetry,
+                  timestamp: new Date().toISOString(),
+                  // Store share_url for tech support debugging only
+                  _internalDebugUrl: engineTask.share_url || engineTask.task_url || null,
+                  _note: "URL is for internal debugging only, never expose to users",
+                };
+                
                 await db.updatePptTask(input.taskId, {
                   status: "failed",
                   currentStep: "生成失败",
-                  errorMessage: "AI完成任务但未能导出PPT文件，请点击重试按钮",
+                  errorMessage,
                   outputContent,
-                  interactionData: null,
+                  interactionData: JSON.stringify(internalDebugInfo),
                 });
                 await db.addTimelineEvent(input.taskId, "生成失败 - 未找到PPT文件", "failed");
               } else {
                 await db.updatePptTask(input.taskId, {
-                  currentStep: `正在导出PPT文件... (${currentRetry}/${CONFIG.MAX_POLL_RETRIES})`,
+                  currentStep: `正在导出PPT文件... (重试 ${currentRetry}/${CONFIG.MAX_POLL_RETRIES})`,
                   progress: 95 + Math.min(currentRetry, 4),
                   outputContent,
                   interactionData: JSON.stringify({ retryCount: currentRetry }),
@@ -485,7 +539,9 @@ const taskRouter = router({
         }
       }
 
-      return db.getPptTaskById(input.taskId);
+      const updatedTask = await db.getPptTaskById(input.taskId);
+      // 🔒 SECURITY: Sanitize task before returning to frontend
+      return updatedTask ? sanitizeTaskForFrontend(updatedTask as any) : null;
     }),
 
   // Continue task (respond to AI question)
@@ -750,8 +806,21 @@ const fileRouter = router({
   // Upload file to S3 and optionally to engine
   upload: protectedProcedure
     .input(z.object({
-      fileName: z.string(),
-      contentType: z.string(),
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().refine(
+        (val) => [
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'text/plain',
+          'text/markdown',
+          'image/png',
+          'image/jpeg',
+          'image/webp',
+          'image/gif',
+        ].includes(val),
+        { message: '不支持的文件类型' }
+      ),
       base64Data: z.string(),
       uploadToEngine: z.boolean().default(false),
     }))
@@ -759,14 +828,27 @@ const fileRouter = router({
       const buffer = Buffer.from(input.base64Data, "base64");
       const fileSizeMB = buffer.length / (1024 * 1024);
       
-      console.log(`[File] Uploading file: ${input.fileName}, size: ${fileSizeMB.toFixed(2)}MB`);
+      console.log(`[File] Uploading file: ${input.fileName}, size: ${fileSizeMB.toFixed(2)}MB, type: ${input.contentType}`);
       
-      // Check file size limit (50MB max for engine upload)
-      const MAX_FILE_SIZE_MB = 50;
+      // Check file size limit (from env or default 50MB)
+      const MAX_FILE_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '50');
       if (fileSizeMB > MAX_FILE_SIZE_MB) {
         throw new TRPCError({
           code: "PAYLOAD_TOO_LARGE",
           message: `文件太大（${fileSizeMB.toFixed(1)}MB），最大支持${MAX_FILE_SIZE_MB}MB`,
+        });
+      }
+      
+      // Validate file content matches declared type
+      const validation = validateFileBuffer(buffer, input.fileName, {
+        maxSizeMB: MAX_FILE_SIZE_MB,
+      });
+      
+      if (!validation.valid) {
+        console.error(`[File] Validation failed: ${validation.error}`);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `文件验证失败: ${validation.error}`,
         });
       }
       

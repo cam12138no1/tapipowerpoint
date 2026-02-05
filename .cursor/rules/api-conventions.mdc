@@ -1,0 +1,183 @@
+---
+description: API design conventions for tRPC and REST endpoints
+globs: "server/**/*.ts"
+alwaysApply: false
+---
+
+# API Conventions
+
+## tRPC Router Structure
+
+Organize routers by domain/feature:
+
+```typescript
+// ✅ GOOD - Domain-based router
+export const userRouter = router({
+  create: protectedProcedure
+    .input(createUserSchema)
+    .mutation(async ({ input, ctx }) => {
+      return await ctx.db.users.create({ data: input });
+    }),
+    
+  list: publicProcedure
+    .input(listUsersSchema)
+    .query(async ({ input, ctx }) => {
+      return await ctx.db.users.findMany({
+        where: input.filters,
+        take: input.limit,
+      });
+    }),
+});
+```
+
+## Input Validation
+
+Always use Zod schemas for validation:
+
+```typescript
+// ❌ BAD - No validation
+async function createUser(input: any) {
+  return db.users.create({ data: input });
+}
+
+// ✅ GOOD - Zod validation
+const createUserSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  age: z.number().int().positive().optional(),
+});
+
+export const userRouter = router({
+  create: protectedProcedure
+    .input(createUserSchema)
+    .mutation(async ({ input, ctx }) => {
+      // input is type-safe and validated
+      return await ctx.db.users.create({ data: input });
+    }),
+});
+```
+
+## Error Handling
+
+Use tRPC error codes appropriately:
+
+```typescript
+// ✅ GOOD - Proper error handling
+import { TRPCError } from '@trpc/server';
+
+export const userRouter = router({
+  getById: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const user = await ctx.db.users.findUnique({
+        where: { id: input.id },
+      });
+      
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `User with id ${input.id} not found`,
+        });
+      }
+      
+      return user;
+    }),
+});
+```
+
+## Authentication
+
+Use procedure middleware for authentication:
+
+```typescript
+// ✅ GOOD - Protected procedure
+const protectedProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (!ctx.session?.user) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'You must be logged in',
+    });
+  }
+  
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.session.user,
+    },
+  });
+});
+```
+
+## Response Format
+
+Return consistent response structures:
+
+```typescript
+// ✅ GOOD - Consistent response format
+export const postRouter = router({
+  list: publicProcedure
+    .input(listSchema)
+    .query(async ({ input, ctx }) => {
+      const [items, total] = await Promise.all([
+        ctx.db.posts.findMany({
+          skip: input.offset,
+          take: input.limit,
+        }),
+        ctx.db.posts.count(),
+      ]);
+      
+      return {
+        items,
+        total,
+        hasMore: input.offset + input.limit < total,
+      };
+    }),
+});
+```
+
+## Database Queries
+
+Use transactions for related operations:
+
+```typescript
+// ✅ GOOD - Transaction for related operations
+export const orderRouter = router({
+  create: protectedProcedure
+    .input(createOrderSchema)
+    .mutation(async ({ input, ctx }) => {
+      return await ctx.db.$transaction(async (tx) => {
+        const order = await tx.orders.create({
+          data: { userId: ctx.user.id, ...input },
+        });
+        
+        await tx.inventory.update({
+          where: { productId: input.productId },
+          data: { quantity: { decrement: input.quantity } },
+        });
+        
+        return order;
+      });
+    }),
+});
+```
+
+## Rate Limiting
+
+Add rate limiting to sensitive endpoints:
+
+```typescript
+// ✅ GOOD - Rate limiting middleware
+const rateLimitedProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const key = ctx.ip || 'anonymous';
+  const limit = await checkRateLimit(key);
+  
+  if (!limit.allowed) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Rate limit exceeded',
+    });
+  }
+  
+  return next();
+});
+```
