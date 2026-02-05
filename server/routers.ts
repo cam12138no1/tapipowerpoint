@@ -411,13 +411,17 @@ const taskRouter = router({
               }
             }
             
-            if (resultPptxUrl) {
-              console.log(`[Task ${input.taskId}] ✓ SUCCESS! PPTX URL: ${resultPptxUrl.substring(0, 80)}...`);
+            // 🔧 FIX: Accept PDF if PPTX not found (Manus may return PDF instead)
+            if (resultPptxUrl || resultPdfUrl) {
+              console.log(`[Task ${input.taskId}] ✓ SUCCESS! Files:`, {
+                pptx: resultPptxUrl ? 'Yes' : 'No',
+                pdf: resultPdfUrl ? 'Yes' : 'No',
+              });
               await db.updatePptTask(input.taskId, {
                 status: "completed",
                 currentStep: "生成完成！",
                 progress: 100,
-                resultPptxUrl,
+                resultPptxUrl: resultPptxUrl || resultPdfUrl, // Use PDF as fallback
                 resultPdfUrl,
                 outputContent,
               });
