@@ -156,17 +156,17 @@ export function RealProgressBar({
               {getDisplayMessage()}
             </span>
           </div>
-          <div className="flex items-center gap-4">
-            {/* 已用时间 */}
-            {(status === 'running' || status === 'uploading') && elapsedTime > 0 && (
-              <span className="text-xs text-muted-foreground">
-                已用时 {formatTime(elapsedTime)}
-              </span>
-            )}
+          <div className="flex items-center gap-3">
             {/* 进度百分比 */}
             <span className="text-sm font-semibold tabular-nums" style={{ color: 'oklch(0.25 0.05 250)' }}>
               {Math.round(displayProgress)}%
             </span>
+            {/* 已用时间 */}
+            {(status === 'running' || status === 'uploading') && elapsedTime > 0 && (
+              <span className="text-xs text-muted-foreground px-2 py-0.5 rounded-md bg-muted/50">
+                {formatTime(elapsedTime)}
+              </span>
+            )}
           </div>
         </div>
         
@@ -192,7 +192,7 @@ export function RealProgressBar({
       {/* 提示信息 */}
       {status === 'running' && (
         <p className="text-xs text-muted-foreground text-center">
-          PPT生成通常需要2-5分钟，请耐心等待
+          AI 正在精心制作您的 PPT，预计需要 15-20 分钟，请耐心等待
         </p>
       )}
       

@@ -578,10 +578,13 @@ export function buildPPTPrompt(
   // Output requirements
   lines.push('## 输出要求');
   lines.push('');
-  lines.push('1. 完成后导出为 `.pptx` 文件');
-  lines.push('2. 包含封面、目录、执行摘要');
-  lines.push('3. 请自主完成所有工作，无需频繁确认');
-  lines.push('4. 封面只包含：标题、副标题、日期');
+  lines.push('1. **页数控制**：生成 12-15 页精简 PPT（不超过 15 页）');
+  lines.push('2. **导出格式**：完成后导出为 `.pptx` 文件');
+  lines.push('3. **必需内容**：包含封面、目录、执行摘要、结尾');
+  lines.push('4. **封面设计**：封面只包含标题、副标题、日期');
+  lines.push('5. **自主完成**：请自主完成所有工作，无需频繁确认');
+  lines.push('');
+  lines.push('**重要**：请严格控制在 12-15 页以内，每页内容精炼，重质量不重数量。');
   lines.push('');
   
   return lines.join('\n');
