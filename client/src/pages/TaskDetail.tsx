@@ -105,6 +105,15 @@ function parseOutputToBlocks(output: any[]): ContentBlock[] {
   
   const blocks: ContentBlock[] = [];
   
+  // 需要完全过滤的提示词内容关键词（更严格）
+  const PROMPT_KEYWORDS = [
+    '请为我制作', '专业PPT制作任务', '设计规范', '内容来源',
+    '配图要求', '质量要求', '输出要求', '请基于', '封面只包含',
+    '麦肯锡', 'BCG', '贝恩', '金字塔原则', '请自主完成',
+    '主色调', '辅助色', '强调色', '字体', '设计说明',
+    '必须使用', '建议使用', '可选使用', '附件',
+  ];
+  
   output.forEach((message, msgIndex) => {
     if (!message.content || !Array.isArray(message.content)) return;
     
@@ -114,13 +123,15 @@ function parseOutputToBlocks(output: any[]): ContentBlock[] {
       if (item.type === 'output_text' && item.text) {
         const text = item.text;
         
-        // 过滤掉包含内部指令的内容
-        if (containsInternalInstructions(text)) {
-          return; // 跳过这个内容块
+        // 严格过滤：包含内部指令或提示词关键词的内容
+        if (containsInternalInstructions(text) || 
+            PROMPT_KEYWORDS.some(kw => text.includes(kw))) {
+          return; // 完全跳过这些内容
         }
         
-        // Check for slide content
-        if (text.includes('## ') || text.includes('### ') || text.includes('幻灯片')) {
+        // 只显示真正有意义的 AI 工作状态
+        // 检查是否是幻灯片内容（包含 ## 标题且内容充实）
+        if ((text.includes('## ') || text.includes('### ')) && text.length > 100) {
           blocks.push({
             id: `slide-${blockId}`,
             type: 'slide',
@@ -130,34 +141,15 @@ function parseOutputToBlocks(output: any[]): ContentBlock[] {
             timestamp: new Date(),
           });
         } 
-        // Check for thinking/analysis
-        else if (text.includes('分析') || text.includes('思考') || text.includes('规划')) {
+        // 只显示简短的操作状态（不是长文本）
+        else if (text.length < 100 && (
+          text.includes('正在') || text.includes('完成') || 
+          text.includes('生成') || text.includes('分析')
+        )) {
           blocks.push({
-            id: `thinking-${blockId}`,
-            type: 'thinking',
-            title: '分析与规划',
-            content: text,
-            status: 'completed',
-            timestamp: new Date(),
-          });
-        }
-        // Check for action/operation
-        else if (text.includes('正在') || text.includes('开始') || text.includes('执行')) {
-          blocks.push({
-            id: `action-${blockId}`,
+            id: `status-${blockId}`,
             type: 'action',
-            title: '执行操作',
-            content: text,
-            status: 'completed',
-            timestamp: new Date(),
-          });
-        }
-        // Default to content block
-        else if (text.trim().length > 0) {
-          blocks.push({
-            id: `content-${blockId}`,
-            type: 'content',
-            title: '内容生成',
+            title: '工作状态',
             content: text,
             status: 'completed',
             timestamp: new Date(),
@@ -172,7 +164,7 @@ function parseOutputToBlocks(output: any[]): ContentBlock[] {
           id: `file-${blockId}`,
           type: isImage ? 'image' : 'result',
           title: item.fileName,
-          content: isImage ? '已生成图片' : '已生成文件',
+          content: isImage ? '✓ 已生成配图' : '✓ PPT 文件已生成',
           status: 'completed',
           timestamp: new Date(),
           metadata: {
@@ -646,16 +638,29 @@ export default function TaskDetail() {
   };
   
   // 直接链接下载（备用）
-  const handleDirectDownload = (url: string, type: 'pptx' | 'pdf') => {
+  // 在新窗口预览文件（不下载）
+  const handlePreview = (url: string, type: 'pptx' | 'pdf') => {
+    // PDF 可以直接在浏览器预览
+    if (type === 'pdf') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      toast.success('已在新窗口打开预览');
+    } else {
+      // PPTX 使用 Office Online Viewer 预览
+      const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+      window.open(viewerUrl, '_blank', 'noopener,noreferrer,width=1200,height=800');
+      toast.success('已在新窗口打开 PPT 预览');
+    }
+  };
+  
+  // 快速下载（直接使用浏览器下载，不经过 fetch）
+  const handleQuickDownload = (url: string, type: 'pptx' | 'pdf') => {
     const link = document.createElement('a');
     link.href = url;
     link.download = `${task.title}.${type}`;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.info('已在新窗口打开下载链接');
+    toast.success(`开始下载 ${type.toUpperCase()}`);
   };
 
   return (
