@@ -638,29 +638,20 @@ export default function TaskDetail() {
   };
   
   // 直接链接下载（备用）
-  // 在新窗口预览文件（不下载）
-  const handlePreview = (url: string, type: 'pptx' | 'pdf') => {
-    // PDF 可以直接在浏览器预览
-    if (type === 'pdf') {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      toast.success('已在新窗口打开预览');
-    } else {
-      // PPTX 使用 Office Online Viewer 预览
-      const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
-      window.open(viewerUrl, '_blank', 'noopener,noreferrer,width=1200,height=800');
-      toast.success('已在新窗口打开 PPT 预览');
+  // 快速下载 PPTX（直接使用浏览器下载）
+  const handleQuickDownload = () => {
+    if (!task.resultPptxUrl) {
+      toast.error('文件链接不存在');
+      return;
     }
-  };
-  
-  // 快速下载（直接使用浏览器下载，不经过 fetch）
-  const handleQuickDownload = (url: string, type: 'pptx' | 'pdf') => {
+    
     const link = document.createElement('a');
-    link.href = url;
-    link.download = `${task.title}.${type}`;
+    link.href = task.resultPptxUrl;
+    link.download = `${task.title}.pptx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success(`开始下载 ${type.toUpperCase()}`);
+    toast.success('开始下载 PPTX');
   };
 
   return (
@@ -828,36 +819,13 @@ export default function TaskDetail() {
                 <CardContent>
                   <div className="flex flex-wrap gap-3">
                     {task.resultPptxUrl ? (
-                      <>
-                        {/* 主操作：快速下载 */}
-                        <Button 
-                          onClick={() => handleQuickDownload(task.resultPptxUrl!, 'pptx')}
-                          className="btn-pro-gold"
-                        >
-                          <Download className="w-4 h-4 mr-2" />
-                          下载 PPTX
-                        </Button>
-                        
-                        {/* 预览按钮 */}
-                        <Button 
-                          variant="outline"
-                          onClick={() => handlePreview(task.resultPptxUrl!, 'pptx')}
-                        >
-                          <Eye className="w-4 h-4 mr-2" />
-                          在线预览
-                        </Button>
-                        
-                        {/* PDF 下载（如果有）*/}
-                        {task.resultPdfUrl && (
-                          <Button 
-                            variant="outline"
-                            onClick={() => handleQuickDownload(task.resultPdfUrl!, 'pdf')}
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            下载 PDF
-                          </Button>
-                        )}
-                      </>
+                      <Button 
+                        onClick={handleQuickDownload}
+                        className="btn-pro-gold"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        下载 PPTX
+                      </Button>
                     ) : (
                       <Button 
                         variant="outline" 

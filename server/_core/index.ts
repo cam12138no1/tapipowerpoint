@@ -152,8 +152,16 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
+  server.listen(port, async () => {
     console.log(`Server running on http://localhost:${port}/`);
+    
+    // Auto-cleanup stuck tasks on startup
+    try {
+      const { runStartupCleanup } = await import('../cleanup-tasks');
+      await runStartupCleanup();
+    } catch (error) {
+      console.error('[Server] Cleanup failed:', error);
+    }
   });
 }
 
