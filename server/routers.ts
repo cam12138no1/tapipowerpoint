@@ -506,22 +506,52 @@ const taskRouter = router({
           }
           
           default: {
-            // Still running - calculate progress
+            // Still running - calculate progress and extract meaningful status
             let progress = task.progress || 60;
-            let currentStep = "AI正在处理中...";
+            let currentStep = "AI 正在精心设计您的演示文稿...";
             
             if (engineTask.output && Array.isArray(engineTask.output)) {
               // More messages = more progress (cap at 94%)
-              progress = Math.min(60 + engineTask.output.length * 2, 94);
+              const messageCount = engineTask.output.length;
+              progress = Math.min(60 + messageCount * 3, 94);
               
-              // Get latest step from output
-              const lastMsg = engineTask.output[engineTask.output.length - 1];
-              if (lastMsg?.content) {
-                const textItem = lastMsg.content.find((c: any) => c.type === 'output_text');
-                if (textItem?.text) {
-                  const firstLine = textItem.text.split('\n')[0].trim();
-                  if (firstLine.length > 5 && firstLine.length < 100) {
-                    currentStep = firstLine;
+              // Extract meaningful status from latest assistant messages
+              const statusDescriptions = [
+                "正在分析文档结构和内容要点...",
+                "正在设计 PPT 整体框架...",
+                "正在提炼核心观点和数据...",
+                "正在设计幻灯片布局...",
+                "正在优化视觉呈现效果...",
+                "正在生成专业图表和配图...",
+                "正在完善细节和排版...",
+                "正在进行最终质量检查...",
+              ];
+              
+              // Based on progress, show appropriate status
+              const statusIndex = Math.min(
+                Math.floor((progress - 60) / 5),
+                statusDescriptions.length - 1
+              );
+              currentStep = statusDescriptions[Math.max(0, statusIndex)];
+              
+              // Try to extract file-related info from output
+              for (let i = engineTask.output.length - 1; i >= 0; i--) {
+                const msg = engineTask.output[i];
+                if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+                  for (const item of msg.content) {
+                    if (item.type === 'output_text' && item.text) {
+                      const text = item.text.toLowerCase();
+                      // Detect meaningful actions
+                      if (text.includes('生成') || text.includes('creating')) {
+                        currentStep = "AI 正在生成幻灯片内容...";
+                      } else if (text.includes('导出') || text.includes('export')) {
+                        currentStep = "正在导出 PPTX 文件...";
+                        progress = Math.min(progress, 95);
+                      } else if (text.includes('完成') || text.includes('done')) {
+                        currentStep = "即将完成，正在进行最后处理...";
+                        progress = 96;
+                      }
+                    }
                   }
                 }
               }
