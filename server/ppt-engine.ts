@@ -255,10 +255,13 @@ class PPTEngineClient {
   }
 
   async getTask(taskId: string): Promise<EngineTask> {
-    const response = await this.client.get(`/tasks/${taskId}`);
+    // 🔧 KEY FIX: Add convert=true to get PPTX files
+    const response = await this.client.get(`/tasks/${taskId}`, {
+      params: { convert: true },
+    });
     const data = response.data;
     
-    console.log(`[PPTEngine] Task ${taskId} status: ${data.status}`);
+    console.log(`[PPTEngine] Task ${taskId} status: ${data.status}, convert=true`);
     
     // Extract files from all possible locations
     const files = this.extractFilesFromResponse(data);
