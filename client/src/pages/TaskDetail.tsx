@@ -808,25 +808,80 @@ export default function TaskDetail() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-green-700">
                     <CheckCircle2 className="w-5 h-5" />
-                    生成完成
+                    🎉 专业 PPT 已生成完成！
                   </CardTitle>
-                  <CardDescription>
-                    {task.resultPptxUrl 
-                      ? '您的PPT已成功生成，可以下载或在上方预览'
-                      : '任务已完成，文件正在处理中，请稍后刷新...'}
-                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-3">
-                    {task.resultPptxUrl ? (
+                <CardContent className="space-y-6">
+                  {task.resultPptxUrl ? (
+                    <>
+                      {/* 生成统计 */}
+                      <div className="grid grid-cols-2 gap-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="w-4 h-4" />
+                            <span>生成用时</span>
+                          </div>
+                          <div className="text-lg font-semibold text-green-700">
+                            {(() => {
+                              const start = new Date(task.createdAt).getTime();
+                              const end = new Date(task.updatedAt).getTime();
+                              const minutes = Math.floor((end - start) / 60000);
+                              const seconds = Math.floor(((end - start) % 60000) / 1000);
+                              return `${minutes} 分 ${seconds} 秒`;
+                            })()}
+                          </div>
+                        </div>
+                        
+                        {task.project && (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Sparkles className="w-4 h-4" />
+                              <span>设计规范</span>
+                            </div>
+                            <div className="text-lg font-semibold text-green-700 truncate" title={task.project.name}>
+                              {task.project.name}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* PPT 特点 */}
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-medium flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-amber-500" />
+                          您的 PPT 特点
+                        </h4>
+                        <div className="grid gap-2 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span>专业商务风格设计</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span>数据可视化呈现</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span>逻辑结构清晰完整</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* 下载按钮 */}
                       <Button 
                         onClick={handleQuickDownload}
-                        className="btn-pro-gold"
+                        className="btn-pro-gold w-full"
+                        size="lg"
                       >
-                        <Download className="w-4 h-4 mr-2" />
+                        <Download className="w-5 h-5 mr-2" />
                         下载 PPTX
                       </Button>
-                    ) : (
+                    </>
+                  ) : (
+                    <div className="text-center space-y-4">
+                      <p className="text-sm text-muted-foreground">
+                        任务已完成，文件正在处理中...
+                      </p>
                       <Button 
                         variant="outline" 
                         onClick={() => refetch()}
@@ -834,8 +889,8 @@ export default function TaskDetail() {
                         <RefreshCw className="w-4 h-4 mr-2" />
                         刷新状态
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
