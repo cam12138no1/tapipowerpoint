@@ -16,3 +16,24 @@ build/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+
+# 不上传 AI 生成的解释报告和临时文档
+*REVIEW*.md
+*REPORT*.md
+*FIX*.md
+*DEPLOYMENT*.md
+*DEBUG*.md
+*ROADMAP*.md
+*CHECKLIST*.md
+修复*.md
+部署*.md
+关于*.md
+最终*.md
+准备*.md
+如何*.md
+您需要*.md
+*状态*.md
+*进度*.md
+*验证*.md
+*说明.md
+*总结.md
