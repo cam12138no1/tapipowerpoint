@@ -829,42 +829,34 @@ export default function TaskDetail() {
                   <div className="flex flex-wrap gap-3">
                     {task.resultPptxUrl ? (
                       <>
+                        {/* 主操作：快速下载 */}
                         <Button 
-                          className="btn-pro-gold" 
-                          onClick={handleDownloadPptx}
-                          disabled={isDownloading === 'pptx'}
+                          onClick={() => handleQuickDownload(task.resultPptxUrl!, 'pptx')}
+                          className="btn-pro-gold"
                         >
-                          {isDownloading === 'pptx' ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Download className="w-4 h-4 mr-2" />
-                          )}
+                          <Download className="w-4 h-4 mr-2" />
                           下载 PPTX
                         </Button>
+                        
+                        {/* 预览按钮 */}
+                        <Button 
+                          variant="outline"
+                          onClick={() => handlePreview(task.resultPptxUrl!, 'pptx')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          在线预览
+                        </Button>
+                        
+                        {/* PDF 下载（如果有）*/}
                         {task.resultPdfUrl && (
                           <Button 
-                            variant="outline" 
-                            onClick={handleDownloadPdf}
-                            disabled={isDownloading === 'pdf'}
+                            variant="outline"
+                            onClick={() => handleQuickDownload(task.resultPdfUrl!, 'pdf')}
                           >
-                            {isDownloading === 'pdf' ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <Download className="w-4 h-4 mr-2" />
-                            )}
+                            <Download className="w-4 h-4 mr-2" />
                             下载 PDF
                           </Button>
                         )}
-                        {/* 备用下载链接 */}
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => handleDirectDownload(task.resultPptxUrl!, 'pptx')}
-                          className="text-muted-foreground"
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          直接打开
-                        </Button>
                       </>
                     ) : (
                       <Button 
