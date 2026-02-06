@@ -284,7 +284,9 @@ const taskRouter = router({
       } : null;
 
       // Build prompt with design spec
-      const prompt = buildPPTPrompt(input.sourceFileId || null, input.imageFileIds || [], input.proposalContent, designSpec);
+      // Use input.proposalContent if provided, otherwise fall back to saved task content
+      const proposalContent = input.proposalContent || task.proposalContent || undefined;
+      const prompt = buildPPTPrompt(input.sourceFileId || null, input.imageFileIds || [], proposalContent, designSpec);
 
       // Prepare attachments
       const attachments: Array<{ fileId: string }> = [];
@@ -301,7 +303,7 @@ const taskRouter = router({
           prompt,
           projectId: project?.engineProjectId || undefined,
           attachments,
-          createShareableLink: true,
+          createShareableLink: false,
           interactiveMode: true,
         });
 
@@ -309,7 +311,6 @@ const taskRouter = router({
           engineTaskId: engineTask.task_id,
           currentStep: "AI正在分析文档内容...",
           progress: 60,
-          // Don't expose shareUrl to frontend - keep internal for debugging
         });
 
         return { success: true, engineTaskId: engineTask.task_id };
@@ -676,7 +677,7 @@ const taskRouter = router({
           prompt,
           projectId: project?.engineProjectId || undefined,
           attachments,
-          createShareableLink: true,
+          createShareableLink: false,
           interactiveMode: true,
         });
 
@@ -684,7 +685,6 @@ const taskRouter = router({
           engineTaskId: engineTask.task_id,
           currentStep: "AI正在分析文档内容...",
           progress: 60,
-          // Don't expose shareUrl to frontend - keep internal for debugging
         });
 
         return { success: true, engineTaskId: engineTask.task_id };
