@@ -421,8 +421,8 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {/* AI 生成阶段展示 */}
-            {(isActive || isCompleted) && (
+            {/* AI 生成阶段展示 - 仅在生成中时显示 */}
+            {isActive && (
               <Card className="pro-card border-0 shadow-pro overflow-hidden">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -436,7 +436,7 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {/* Interaction Section - Enhanced with UserInteractionPanel */}
+            {/* Interaction Section */}
             {needsInteraction && (
               <UserInteractionPanel
                 interactionData={task.interactionData}
@@ -446,69 +446,46 @@ export default function TaskDetail() {
               />
             )}
 
-            {/* Completed Section */}
+            {/* Completed Section - 成果展示 + 下载 */}
             {isCompleted && (
               <Card className="pro-card border-0 shadow-pro overflow-hidden">
                 <div className="h-1 bg-green-500" />
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-green-700">
-                    <CheckCircle2 className="w-5 h-5" />
-                    🎉 专业 PPT 已生成完成！
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="pt-6 space-y-5">
                   {task.resultPptxUrl ? (
                     <>
-                      {/* 生成统计 */}
-                      <div className="grid grid-cols-2 gap-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Clock className="w-4 h-4" />
-                            <span>生成用时</span>
-                          </div>
-                          <div className="text-lg font-semibold text-green-700">
-                            {(() => {
+                      {/* 标题 */}
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-green-100">
+                          <CheckCircle2 className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-green-700">专业 PPT 已生成完成</h3>
+                          <p className="text-sm text-muted-foreground">
+                            用时 {(() => {
                               const start = new Date(task.createdAt).getTime();
                               const end = new Date(task.updatedAt).getTime();
                               const minutes = Math.floor((end - start) / 60000);
                               const seconds = Math.floor(((end - start) % 60000) / 1000);
                               return `${minutes} 分 ${seconds} 秒`;
                             })()}
-                          </div>
+                            {task.project && ` · ${task.project.name}`}
+                          </p>
                         </div>
-                        
-                        {task.project && (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <Sparkles className="w-4 h-4" />
-                              <span>设计规范</span>
-                            </div>
-                            <div className="text-lg font-semibold text-green-700 truncate" title={task.project.name}>
-                              {task.project.name}
-                            </div>
-                          </div>
-                        )}
                       </div>
-                      
+
                       {/* PPT 特点 */}
-                      <div className="space-y-3">
-                        <h4 className="text-sm font-medium flex items-center gap-2">
-                          <Sparkles className="w-4 h-4 text-amber-500" />
-                          您的 PPT 特点
-                        </h4>
-                        <div className="grid gap-2 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            <span>专业商务风格设计</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            <span>数据可视化呈现</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            <span>逻辑结构清晰完整</span>
-                          </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          <span className="text-xs text-green-700">专业商务风格</span>
+                        </div>
+                        <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          <span className="text-xs text-green-700">数据可视化</span>
+                        </div>
+                        <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          <span className="text-xs text-green-700">逻辑结构清晰</span>
                         </div>
                       </div>
                       
@@ -523,9 +500,10 @@ export default function TaskDetail() {
                       </Button>
                     </>
                   ) : (
-                    <div className="text-center space-y-4">
+                    <div className="text-center space-y-4 py-4">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
-                        任务已完成，文件正在处理中...
+                        文件正在处理中，请稍候...
                       </p>
                       <Button 
                         variant="outline" 
