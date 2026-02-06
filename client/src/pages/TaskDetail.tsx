@@ -97,6 +97,80 @@ function containsInternalInstructions(text: string): boolean {
   return INTERNAL_INSTRUCTION_KEYWORDS.some(keyword => text.includes(keyword));
 }
 
+// ============ 简洁的生成阶段组件 ============
+
+const GENERATION_STAGES = [
+  { id: 'analyze', label: '文档分析', threshold: 55, icon: FileText },
+  { id: 'extract', label: '内容提炼', threshold: 62, icon: Sparkles },
+  { id: 'design', label: '幻灯片设计', threshold: 70, icon: Layout },
+  { id: 'chart', label: '图表生成', threshold: 80, icon: Presentation },
+  { id: 'polish', label: '视觉优化', threshold: 90, icon: Sparkles },
+  { id: 'export', label: '导出文件', threshold: 98, icon: Download },
+];
+
+function GenerationStages({ progress, status }: { progress: number; status: string }) {
+  const isCompleted = status === 'completed';
+  const isFailed = status === 'failed';
+
+  return (
+    <div className="space-y-1">
+      {GENERATION_STAGES.map((stage, index) => {
+        let stageStatus: 'done' | 'active' | 'pending';
+        
+        if (isCompleted) {
+          stageStatus = 'done';
+        } else if (isFailed) {
+          stageStatus = progress >= stage.threshold ? 'done' : 'pending';
+        } else if (progress >= stage.threshold) {
+          stageStatus = 'done';
+        } else if (index === 0 || progress >= GENERATION_STAGES[index - 1].threshold) {
+          stageStatus = 'active';
+        } else {
+          stageStatus = 'pending';
+        }
+
+        const Icon = stage.icon;
+
+        return (
+          <div
+            key={stage.id}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-300",
+              stageStatus === 'active' && "bg-primary/5",
+            )}
+          >
+            {/* 状态图标 */}
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+              {stageStatus === 'done' ? (
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+              ) : stageStatus === 'active' ? (
+                <Loader2 className="w-4 h-4 text-primary animate-spin" />
+              ) : (
+                <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/30" />
+              )}
+            </div>
+
+            {/* 阶段名称 */}
+            <span className={cn(
+              "text-sm transition-colors duration-300",
+              stageStatus === 'done' && "text-green-700 font-medium",
+              stageStatus === 'active' && "text-primary font-medium",
+              stageStatus === 'pending' && "text-muted-foreground",
+            )}>
+              {stage.label}
+            </span>
+
+            {/* 当前活跃的阶段显示动画点 */}
+            {stageStatus === 'active' && (
+              <span className="text-xs text-primary/60 ml-auto">处理中...</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Parse API output to content blocks for LiveCanvas
 function parseOutputToBlocks(output: any[]): ContentBlock[] {
   if (!output || !Array.isArray(output)) return [];
@@ -704,8 +778,8 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {/* AI 生成过程展示 */}
-            {contentBlocks.length > 0 && (
+            {/* AI 生成阶段展示 */}
+            {(isActive || isCompleted) && (
               <Card className="pro-card border-0 shadow-pro overflow-hidden">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -714,22 +788,9 @@ export default function TaskDetail() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <LiveCanvas
-                    blocks={contentBlocks}
-                    isStreaming={isActive}
-                    currentStep={task.currentStep}
-                  />
+                  <GenerationStages progress={task.progress} status={task.status} />
                 </CardContent>
               </Card>
-            )}
-
-            {/* Live Canvas for active tasks without tabs */}
-            {isActive && contentBlocks.length === 0 && slideContents.length === 0 && (
-              <LiveCanvas
-                blocks={contentBlocks}
-                isStreaming={isActive}
-                currentStep={task.currentStep}
-              />
             )}
 
             {/* Interaction Section - Enhanced with UserInteractionPanel */}
