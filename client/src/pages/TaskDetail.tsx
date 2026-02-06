@@ -2,8 +2,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { LiveCanvas, ContentBlock } from "@/components/LiveCanvas";
 import { UserInteractionPanel } from "@/components/UserInteractionPanel";
 import { RealProgressBar } from "@/components/RealProgressBar";
-import { PPTPreview } from "@/components/PPTPreview";
-import { EmbeddedPPTViewer } from "@/components/EmbeddedPPTViewer";
 import { SlidePreviewCanvas, SlideContent } from "@/components/SlidePreviewCanvas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -617,27 +615,6 @@ export default function TaskDetail() {
     }
   };
 
-  const handleDownloadPdf = async () => {
-    if (!task.resultPdfUrl) {
-      toast.error('PDF 文件不存在');
-      return;
-    }
-    
-    setIsDownloading('pdf');
-    const filename = `${task.title.replace(/[^\w\u4e00-\u9fa5]/g, '_')}.pdf`;
-    
-    try {
-      await downloadFile(task.resultPdfUrl, filename);
-      toast.success('PDF 下载成功');
-    } catch (error: any) {
-      console.error('PDF download failed:', error);
-      toast.error('自动下载失败，正在打开新窗口...');
-    } finally {
-      setIsDownloading(null);
-    }
-  };
-  
-  // 直接链接下载（备用）
   // 快速下载 PPTX（直接使用浏览器下载）
   const handleQuickDownload = () => {
     if (!task.resultPptxUrl) {
@@ -727,59 +704,23 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {/* Tabs for Process/Preview - 简化为两个Tab */}
-            {(isCompleted || contentBlocks.length > 0) && (
-              <Tabs value={activeTab === 'slides' ? 'process' : activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="process" className="flex items-center gap-2">
+            {/* AI 生成过程展示 */}
+            {contentBlocks.length > 0 && (
+              <Card className="pro-card border-0 shadow-pro overflow-hidden">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Sparkles className="w-4 h-4" />
-                    生成过程
-                  </TabsTrigger>
-                  <TabsTrigger value="preview" className="flex items-center gap-2" disabled={!isCompleted}>
-                    <Presentation className="w-4 h-4" />
-                    成片预览
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="process" className="mt-4">
+                    AI 生成过程
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
                   <LiveCanvas
                     blocks={contentBlocks}
                     isStreaming={isActive}
                     currentStep={task.currentStep}
                   />
-                </TabsContent>
-                
-                <TabsContent value="preview" className="mt-4">
-                  {isCompleted ? (
-                    task.resultPptxUrl ? (
-                      <EmbeddedPPTViewer
-                        pptxUrl={task.resultPptxUrl}
-                        pdfUrl={task.resultPdfUrl}
-                        title={task.title}
-                      />
-                    ) : (
-                      <Card className="pro-card border-0 shadow-pro">
-                        <CardContent className="p-8 text-center">
-                          <AlertCircle className="w-12 h-12 mx-auto mb-4 text-amber-500" />
-                          <h3 className="text-lg font-semibold mb-2">PPT 文件正在处理中</h3>
-                          <p className="text-muted-foreground mb-4">文件可能仍在上传到服务器，请稍后刷新页面</p>
-                          <Button variant="outline" onClick={() => refetch()}>
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            刷新状态
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    )
-                  ) : (
-                    <Card className="pro-card border-0 shadow-pro">
-                      <CardContent className="p-8 text-center">
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
-                        <p className="text-muted-foreground">PPT 生成完成后可预览</p>
-                      </CardContent>
-                    </Card>
-                  )}
-                </TabsContent>
-              </Tabs>
+                </CardContent>
+              </Card>
             )}
 
             {/* Live Canvas for active tasks without tabs */}
