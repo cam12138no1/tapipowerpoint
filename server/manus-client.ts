@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { ENV } from './_core/env';
+import { BRAND_PURITY_RULES } from './ppt-engine';
 
 // Manus API types
 export interface ManusProject {
@@ -194,6 +195,8 @@ export function buildPPTPrompt(
   images: Array<{ fileId: string; placement: string }>
 ): string {
   const lines = [
+    BRAND_PURITY_RULES,
+    '',
     '请根据我提供的资料和要求，制作一份专业的行业PPT。',
     '',
     '**任务要求**：',
@@ -223,6 +226,8 @@ export function buildPPTPrompt(
 
   lines.push('');
   lines.push('4. **最终交付**：完成所有内容的撰写和配图后，将整个PPT打包成一个可下载的 `.pptx` 文件作为最终交付物。');
+  lines.push('');
+  lines.push('5. **⛔ 品牌纯净（再次强调）**：在导出PPTX之前，请逐页检查，确保没有任何邮箱地址、网站URL、"Powered by"、"Made by"、作者署名、AI工具名称或任何第三方标识。结尾页只允许简单感谢语，不得有任何联系信息。违反此规则的交付物将被完全拒绝。');
 
   return lines.join('\n');
 }
