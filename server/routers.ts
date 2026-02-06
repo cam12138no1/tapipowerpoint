@@ -260,9 +260,10 @@ const taskRouter = router({
         // Project not found is not an error - user may not have selected a design spec
       }
 
-      // Update task with file IDs
+      // Update task with file IDs and proposal content (for retry)
       await db.updatePptTask(input.taskId, {
         sourceFileId: input.sourceFileId,
+        proposalContent: input.proposalContent || task.proposalContent,
         imageAttachments: JSON.stringify(input.imageFileIds || []),
         status: "running",
         currentStep: "正在创建生成任务...",
